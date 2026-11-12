@@ -1,6 +1,9 @@
 ## Getting Started
 
-1. Navigate to the root directory of the GVSOC repository and add the following line to your `Makefile`:
+1. Use a complete GVSOC SDK with its submodules initialized. The commands
+   below run from the **SDK root**, with this models checkout at `pulp/`,
+   rather than from the root of the standalone `gvsoc-pulp` repository.
+   Add the following line to the SDK's `Makefile`:
 
    ```makefile
    include pulp/pulp/chips/softhier/softhier.mk
@@ -12,7 +15,11 @@
    source pulp/pulp/chips/softhier/softhier_init.sh
    ```
 
-3. Ensure that the environment variables `CC`, `CXX`, and `CMAKE` are correctly set.
+3. Ensure that the host compilers (`CC`, `CXX`) and `CMAKE` are correctly set,
+   and that `riscv32-unknown-elf-g++` and `riscv32-unknown-elf-objdump` are in
+   `PATH` for the firmware. The 2D mesh also needs the SDK's compatible
+   SystemC/DRAMSys installation and its HBM resource files; see the explicit
+   prerequisites and environment checks in the experiment guide below.
 
 4. Compile the SoftHier hardware:
 
@@ -31,6 +38,12 @@
    ```
    pulp/pulp/chips/softhier/common/sw/app_example
    ```
+
+   [`common/sw/app_dram`](common/sw/app_dram/README.md) compares dependent
+   scalar reads and DMA block copies to local and distant HBM. Its guide
+   includes a build/run procedure for both an SDK submodule and a separate
+   models checkout, without modifying the SDK Makefile, plus measurement
+   definitions and DRAMSys database analysis.
 
 6. Run the simulation:
 
@@ -87,3 +100,8 @@ Three ways to change a topology's parameters:
   `TOPOLOGIES` registry entirely and scrapes arch parameters from a custom
   Python file instead, for a full replacement rather than a few field
   overrides.
+
+Build-time `PARAMS` do not automatically persist into the simulator's
+runtime architecture. Pass matching `RUN_ARGS` overrides when running a
+changed configuration, particularly for dimensions and memory layout: the
+generated software headers and simulated architecture must agree.

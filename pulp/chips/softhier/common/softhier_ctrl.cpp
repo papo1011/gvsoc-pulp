@@ -25,12 +25,14 @@
 #include <vp/itf/wire.hpp>
 #include <iostream>
 
-void printProgressBar(int progress, int total, int width = 100) {
+void printProgressBar(int progress, int total, int width = 100)
+{
     float ratio = (float)progress / total;
     int filled = (int)(ratio * width);
 
     std::cout << "\r[";
-    for (int i = 0; i < width; ++i) {
+    for (int i = 0; i < width; ++i)
+    {
         if (i < filled)
             std::cout << "=";
         else if (i == filled)
@@ -43,29 +45,25 @@ void printProgressBar(int progress, int total, int width = 100) {
     std::cout.flush();
 }
 
-
 class SoftHierCtrl : public vp::Component
 {
 
-public:
+  public:
     SoftHierCtrl(vp::ComponentConf &config);
 
-private:
+  private:
     static vp::IoReqStatus req(vp::Block *__this, vp::IoReq *req);
     void reset(bool active);
 
-    vp::Trace               trace;
-    vp::IoSlave             input_itf;
-    uint32_t                num_cluster;
-    uint32_t                num_core_per_cluster;
-    int64_t                 timer_start;
-    int64_t                 all_eoc_conuter;
+    vp::Trace trace;
+    vp::IoSlave input_itf;
+    uint32_t num_cluster;
+    uint32_t num_core_per_cluster;
+    int64_t timer_start;
+    int64_t all_eoc_conuter;
 };
 
-
-
-SoftHierCtrl::SoftHierCtrl(vp::ComponentConf &config)
-    : vp::Component(config)
+SoftHierCtrl::SoftHierCtrl(vp::ComponentConf &config) : vp::Component(config)
 {
     this->num_cluster = this->get_js_config()->get("num_cluster")->get_int();
     this->num_core_per_cluster = this->get_js_config()->get("num_core_per_cluster")->get_int();
@@ -121,7 +119,9 @@ vp::IoReqStatus SoftHierCtrl::req(vp::Block *__this, vp::IoReq *req)
         if (offset == 12)
         {
             int64_t period = _this->time.get_time() - _this->timer_start;
-            std::cout << "[Performance Counter]: Execution period is " << period/1000 << " ns" << std::endl;
+            std::cout << "[Performance Counter]: Execution period is " << period / 1000
+                      << " ns (start_ps=" << _this->timer_start
+                      << " end_ps=" << _this->time.get_time() << ")" << std::endl;
             _this->timer_start = _this->time.get_time();
         }
         if (offset == 16)
@@ -137,7 +137,6 @@ vp::IoReqStatus SoftHierCtrl::req(vp::Block *__this, vp::IoReq *req)
 
     return vp::IO_REQ_OK;
 }
-
 
 extern "C" vp::Component *gv_new(vp::ComponentConf &config)
 {

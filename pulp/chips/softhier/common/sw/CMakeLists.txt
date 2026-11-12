@@ -27,6 +27,7 @@ set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/runtime/flex_memory.ld)
 
 add_custom_command(
     OUTPUT softhier.elf
+    DEPENDS ${SOURCES} ${CMAKE_SOURCE_DIR}/runtime/flex_start.s ${LINKER_SCRIPT}
     COMMAND ${COMPILER} -I ${CMAKE_SOURCE_DIR}/runtime/include -I ${INCLUDE_DIRS} -I ${CMAKE_BINARY_DIR}/hbm -T ${LINKER_SCRIPT} -nostartfiles -mabi=ilp32d -mcmodel=medlow -march=${RISCV_ARCH} -g -O3 -ffunction-sections -ffast-math -fno-builtin -fno-tree-vectorize -fno-common -ffunction-sections -Wl,--gc-sections -o softhier.elf ${CMAKE_SOURCE_DIR}/runtime/flex_start.s ${SOURCES}
     COMMENT "Generating softhier.elf"
 )
