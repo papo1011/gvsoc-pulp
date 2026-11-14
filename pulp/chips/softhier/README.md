@@ -27,6 +27,11 @@
    make sh-hw
    ```
 
+   `sh-hw` builds the models currently checked out in `pulp/`. It does not
+   update submodules: initialize the SDK dependencies before building, and
+   keep `pulp/` on the branch you intend to simulate. The SDK's `make all`
+   includes a submodule checkout step and can restore its pinned revision.
+
 5. Compile the SoftHier software:
 
    ```bash
@@ -41,15 +46,25 @@
 
    [`common/sw/app_dram`](common/sw/app_dram/README.md) compares dependent
    scalar reads and DMA block copies to local and distant HBM. Its guide
-   includes a build/run procedure for both an SDK submodule and a separate
-   models checkout, without modifying the SDK Makefile, plus measurement
-   definitions and DRAMSys database analysis.
+   uses these Make targets for build and simulation, and documents measurement
+   definitions and DRAMSys database analysis. To select the DRAM app explicitly:
+
+   ```bash
+   make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram
+   ```
+
+   Without `app=...`, `sh-sw` builds `app_example`. The DRAM app initializes
+   its own data and does not need `sh-data`.
 
 6. Run the simulation:
 
    ```bash
    make sh-run
    ```
+
+   To collect simulation outputs in a separate directory, use
+   `make sh-run RUN_ARGS="--work-dir=/path/to/run-directory"`. The firmware
+   remains in the SDK's `sw_build/` directory.
 
 7. Chips with specific topologies can be called as follows:
 

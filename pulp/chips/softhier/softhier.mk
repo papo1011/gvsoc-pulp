@@ -37,8 +37,8 @@ sh-config:
 		pulp/pulp/chips/softhier/common/sw/runtime/include $(if $(cfg),--arch-file $(cfg)) $(PARAM_FLAGS)
 
 sh-hw:
-	make sh-config
-	make TARGETS=pulp.chips.softhier.topologies.$(ACTUAL_TOPO)_target all
+	$(MAKE) sh-config
+	$(MAKE) TARGETS=pulp.chips.softhier.topologies.$(ACTUAL_TOPO)_target build
 
 ######################################################################
 ## 				Make Targets for SoftHier Software	 				##
@@ -76,7 +76,7 @@ sh-sw-clean:
 ######################################################################
 
 sh-run:
-	./install/bin/gvsoc --target=pulp.chips.softhier.topologies.$(ACTUAL_TOPO)_target --binary sw_build/softhier.elf $(RUN_ARGS) --trace='/system/cluster_0/redmule/.*' --trace='/system/cluster_0/idma.*' run
+	./install/bin/gvsoc --target=pulp.chips.softhier.topologies.$(ACTUAL_TOPO)_target --binary $(abspath sw_build/softhier.elf) $(RUN_ARGS) --trace='/system/cluster_0/redmule/.*' --trace='/system/cluster_0/idma.*' run
 
 # Forward DEBUG to the top-level build, not just to make itself.
 build: export DEBUG := $(DEBUG)
