@@ -26,6 +26,8 @@
 
 #include "floonoc.hpp"
 #include <list>
+#include <queue>
+#include <unordered_map>
 #include <vp/signal.hpp>
 #include <vp/stats/stats.hpp>
 #include <vp/vp.hpp>
@@ -170,12 +172,11 @@ class NetworkInterface : public FloonocNode
     vp::Signal<uint64_t> signal_narrow_req;
     // Signal used for tracing wide reqs
     vp::Signal<uint64_t> signal_wide_req;
-    // True when the associated target has reported a stall. No request must be
-    // sent until the stalled one is granted
-    bool target_stalled;
-    // True when the routers has been stalled because either the target reported
-    // a stall or there is not enough requests anymore
-    FloonocNode *routers_stalled;
+    // Narrow requests and wide write data can be denied independently by the
+    // same target. Remember the upstream router for each request so a grant
+    // cannot accidentally wake the other plane and leave this one stalled.
+    std::unordered_map<vp::IoReq *, FloonocNode *> stalled_requests;
+    std::queue<FloonocNode *> granted_routers;
     Router *router[NW_NB];
 
     vp::IoReq *wide_read_pending_burst;

@@ -417,8 +417,11 @@ void NetworkInterface::reset(bool active)
     this->trace.msg(vp::Trace::LEVEL_TRACE, "Resetting network interface\n");
     if (active)
     {
-        this->target_stalled = false;
-        this->routers_stalled = NULL;
+        this->stalled_requests.clear();
+        while (!this->granted_routers.empty())
+        {
+            this->granted_routers.pop();
+        }
         this->wide_read_pending_burst = NULL;
         this->wide_write_pending_burst = NULL;
         this->wide_read_pending_burst_nb_req = 0;
@@ -634,17 +637,12 @@ bool NetworkInterface::handle_request(FloonocNode *node, vp::IoReq *req, int fro
             }
             else if (result == vp::IO_REQ_DENIED)
             {
-                // Store the NI in the request. Since the grant is received
-                // by top noc, it will use this argument to notify the NI
-                // about the grant
-                this->target_stalled = true;
+                // Both request planes may be denied at once. Keep each source
+                // router tied to its request until the target grants it.
+                this->stalled_requests.emplace(req, node);
                 is_stalled = true;
             }
 
-            if (is_stalled)
-            {
-                this->routers_stalled = node;
-            }
             return is_stalled;
         }
         else
@@ -784,13 +782,10 @@ void NetworkInterface::fsm_handler(vp::Block *__this, vp::ClockEvent *event)
         _this->handle_response((vp::IoReq *)_this->response_queue.pop());
     }
 
-    if (_this->routers_stalled && !_this->target_stalled)
+    while (!_this->granted_routers.empty())
     {
-        // If we removed a pending burst and the number of pending bursts
-        // was the maximum, notify the local router that it can send another
-        // request
-        _this->routers_stalled->unstall_queue(_this->node_id);
-        _this->routers_stalled = NULL;
+        _this->granted_routers.front()->unstall_queue(_this->node_id);
+        _this->granted_routers.pop();
     }
 
     if (_this->wide_read_pending_burst && _this->wide_read_pending_burst_nb_req == 0)
@@ -896,6 +891,13 @@ void NetworkInterface::fsm_handler(vp::Block *__this, vp::ClockEvent *event)
 
 void NetworkInterface::grant(vp::IoReq *req)
 {
-    this->target_stalled = false;
+    auto stalled = this->stalled_requests.find(req);
+    if (stalled == this->stalled_requests.end())
+    {
+        this->trace.fatal("Target granted an unknown request (req: %p)\n", req);
+        return;
+    }
+    this->granted_routers.push(stalled->second);
+    this->stalled_requests.erase(stalled);
     this->fsm_event.enqueue();
 }
