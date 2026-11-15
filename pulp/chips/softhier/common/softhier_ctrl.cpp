@@ -92,6 +92,15 @@ vp::IoReqStatus SoftHierCtrl::req(vp::Block *__this, vp::IoReq *req)
     uint64_t size = req->get_size();
     bool is_write = req->get_is_write();
 
+    // A shared start/stop timer cannot describe overlapping measurements.
+    // Expose absolute picoseconds so each worker can record its own interval.
+    if (!is_write && size == 4 && (offset == 24 || offset == 28))
+    {
+        uint64_t now = _this->time.get_time();
+        *(uint32_t *)data = offset == 24 ? (uint32_t)now : (uint32_t)(now >> 32);
+        return vp::IO_REQ_OK;
+    }
+
     if (is_write && size == 4)
     {
         uint32_t value = *(uint32_t *)data;

@@ -1,5 +1,7 @@
 # Local and distant HBM accesses
 
+For the multi-cluster DMA sweep, see [app_dram_multi](../app_dram_multi/README.md).
+
 This benchmark checks how HBM distance affects scalar-load latency and DMA
 throughput on SoftHier v1. It runs on the last core of cluster 0; the other
 cores stay idle.
@@ -41,7 +43,7 @@ Run in a fresh directory to keep the log and DRAMSys databases together:
 mkdir -p "$PWD/.local-artifacts/dram-benchmark"
 RUN_DIR="$(mktemp -d "$PWD/.local-artifacts/dram-benchmark/run.XXXXXX")"
 cp sw_build/softhier.elf "$RUN_DIR/softhier.elf"
-make sh-run TOPOLOGY=2d_mesh RUN_ARGS="--work-dir=$RUN_DIR" \
+make sh-run TOPOLOGY=2d_mesh SH_TRACE_ARGS= RUN_ARGS="--work-dir=$RUN_DIR" \
     > "$RUN_DIR/simulation.log" 2>&1
 printf 'Results: %s\n' "$RUN_DIR"
 ```
@@ -112,3 +114,5 @@ completed all 14 measurements with zero data errors:
 Here, distance mainly affects dependent loads; large DMA transfers reach
 similar throughput. These numbers describe this workload and emulated HBM
 configuration, with one active cluster.
+
+DMA helpers and CSV/database utilities are shared through `../dram_common/`.

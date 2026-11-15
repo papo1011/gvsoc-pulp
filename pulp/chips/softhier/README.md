@@ -44,17 +44,23 @@
    pulp/pulp/chips/softhier/common/sw/app_example
    ```
 
-   [`common/sw/app_dram`](common/sw/app_dram/README.md) compares dependent
-   scalar reads and DMA block copies to local and distant HBM. Its guide
-   uses these Make targets for build and simulation, and documents measurement
-   definitions and DRAMSys database analysis. To select the DRAM app explicitly:
+   Two HBM benchmarks are available:
+
+   - [`app_dram`](common/sw/app_dram/README.md): single-cluster dependent reads
+     and DMA copies to local and distant HBM.
+   - [`app_dram_multi`](common/sw/app_dram_multi/README.md): DMA with 2, 4, 8
+     and 16 clusters targeting local, distinct remote or shared HBM channels.
+
+   Select one when building the software:
 
    ```bash
    make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram
+   # Or build the multi-cluster benchmark:
+   make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_multi
    ```
 
-   Without `app=...`, `sh-sw` builds `app_example`. The DRAM app initializes
-   its own data and does not need `sh-data`.
+   Without `app=...`, `sh-sw` builds `app_example`. Both DRAM apps initialize
+   their own data and do not need `sh-data`.
 
 6. Run the simulation:
 

@@ -146,6 +146,22 @@ void flex_timer_end() {
   *end_reg = 1;
 }
 
+// Read the shared simulator clock without changing the start/stop timer.
+// Retrying across a low-word rollover keeps concurrent readers independent.
+inline uint64_t flex_time_ps() {
+  volatile const uint32_t *clock =
+      (volatile const uint32_t *)(ARCH_SOC_REGISTER_EOC + 24);
+  uint32_t high, low, next_high;
+  asm volatile("fence rw, rw" ::: "memory");
+  do {
+    high = clock[1];
+    low = clock[0];
+    next_high = clock[1];
+  } while (high != next_high);
+  asm volatile("fence rw, rw" ::: "memory");
+  return ((uint64_t)high << 32) | low;
+}
+
 /*******************
  *      Logging     *
  *******************/
