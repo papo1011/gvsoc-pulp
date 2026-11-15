@@ -77,10 +77,10 @@ void flex_global_barrier_init() {
 
 void flex_global_barrier_polling() {
   volatile uint32_t *barrier =
-    reinterpret_cast<volatile uint32_t *>(remote_cid(0, BARRIER_OFFSET));
+      reinterpret_cast<volatile uint32_t *>(remote_cid(0, BARRIER_OFFSET));
 
   volatile uint32_t *barrier_iter =
-    reinterpret_cast<volatile uint32_t *>(remote_cid(0, BARRIER_ITER_OFFSET));
+      reinterpret_cast<volatile uint32_t *>(remote_cid(0, BARRIER_ITER_OFFSET));
 
   flex_intra_cluster_sync();
 
@@ -93,7 +93,8 @@ void flex_global_barrier_polling() {
       flex_reset_barrier((uint32_t *)barrier);
       flex_amo_fetch_add((uint32_t *)barrier_iter);
     } else {
-      while ((*barrier_iter) == prev_barrier_iteration);
+      while ((*barrier_iter) == prev_barrier_iteration)
+        ;
     }
   }
 
@@ -118,16 +119,15 @@ void flex_eoc_all(uint32_t val) {
  *      Memset     *
  *******************/
 
-extern "C" void* memset(void* dest, int value, size_t count)
-{
-    auto* p = static_cast<volatile unsigned char*>(dest);
-    const unsigned char byte = static_cast<unsigned char>(value);
+extern "C" void *memset(void *dest, int value, size_t count) {
+  auto *p = static_cast<volatile unsigned char *>(dest);
+  const unsigned char byte = static_cast<unsigned char>(value);
 
-    for (size_t i = 0; i < count; ++i) {
-        p[i] = byte;
-    }
+  for (size_t i = 0; i < count; ++i) {
+    p[i] = byte;
+  }
 
-    return dest;
+  return dest;
 }
 
 /*******************
