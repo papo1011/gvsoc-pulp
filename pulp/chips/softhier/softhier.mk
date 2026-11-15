@@ -75,8 +75,11 @@ sh-sw-clean:
 ## 				Make Targets for Run Simulator		 				##
 ######################################################################
 
+# Set SH_TRACE_ARGS= for benchmark runs that do not need verbose DMA traces.
+SH_TRACE_ARGS ?= --trace='/system/cluster_0/redmule/.*' --trace='/system/cluster_0/idma.*'
+
 sh-run:
-	./install/bin/gvsoc --target=pulp.chips.softhier.topologies.$(ACTUAL_TOPO)_target --binary $(abspath sw_build/softhier.elf) $(RUN_ARGS) --trace='/system/cluster_0/redmule/.*' --trace='/system/cluster_0/idma.*' run
+	./install/bin/gvsoc --target=pulp.chips.softhier.topologies.$(ACTUAL_TOPO)_target --binary $(abspath sw_build/softhier.elf) $(RUN_ARGS) $(SH_TRACE_ARGS) run
 
 # Forward DEBUG to the top-level build, not just to make itself.
 build: export DEBUG := $(DEBUG)

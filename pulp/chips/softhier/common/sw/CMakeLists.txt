@@ -15,6 +15,11 @@ endif()
 
 # AUTO-DETECT: Find all .c files in the target folder automatically
 file(GLOB SOURCES CONFIGURE_DEPENDS "${SRC_DIR}/*.c" "${SRC_DIR}/*.cpp")
+# The custom compiler command also needs to rerun when shared headers change.
+file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS
+    "${SRC_DIR}/*.h"
+    "${CMAKE_SOURCE_DIR}/runtime/include/*.h"
+    "${CMAKE_SOURCE_DIR}/dram_common/*.h")
 
 
 if (NOT INCLUDE_DIRS)
@@ -27,7 +32,7 @@ set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/runtime/flex_memory.ld)
 
 add_custom_command(
     OUTPUT softhier.elf
-    DEPENDS ${SOURCES} ${CMAKE_SOURCE_DIR}/runtime/flex_start.s ${LINKER_SCRIPT}
+    DEPENDS ${SOURCES} ${HEADERS} ${CMAKE_SOURCE_DIR}/runtime/flex_start.s ${LINKER_SCRIPT}
     COMMAND ${COMPILER} -I ${CMAKE_SOURCE_DIR}/runtime/include -I ${INCLUDE_DIRS} -I ${CMAKE_BINARY_DIR}/hbm -T ${LINKER_SCRIPT} -nostartfiles -mabi=ilp32d -mcmodel=medlow -march=${RISCV_ARCH} -g -O3 -ffunction-sections -ffast-math -fno-builtin -fno-tree-vectorize -fno-common -ffunction-sections -Wl,--gc-sections -o softhier.elf ${CMAKE_SOURCE_DIR}/runtime/flex_start.s ${SOURCES}
     COMMENT "Generating softhier.elf"
 )
