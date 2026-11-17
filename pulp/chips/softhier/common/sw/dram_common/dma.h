@@ -40,12 +40,13 @@ static void copy(uint32_t dst, uint32_t src, uint32_t bytes)
     asm volatile("fence rw, rw" ::: "memory");
 }
 
-static uint32_t check(uint32_t address, uint32_t bytes, uint32_t first, uint32_t cluster = 0)
+static uint32_t check(uint32_t address, uint32_t bytes, uint32_t first, uint32_t cluster = 0,
+                      uint32_t first_index = 0, uint32_t index_mask = 0xffffffffu)
 {
     const volatile uint32_t *buffer = (const volatile uint32_t *)address;
     uint32_t errors = buffer[0] != first;
     for (uint32_t i = 1; i < bytes / sizeof(uint32_t); ++i)
-        errors += buffer[i] != pattern(i, cluster);
+        errors += buffer[i] != pattern((first_index + i) & index_mask, cluster);
     return errors;
 }
 

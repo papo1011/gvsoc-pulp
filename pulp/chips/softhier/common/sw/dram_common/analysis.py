@@ -62,7 +62,9 @@ def query_measurements(fields, measurements, directory):
             # Shared-channel intervals overlap. The private HBM slot identifies
             # this worker's requests without counting another worker's traffic.
             lower = row.get("hbm_offset", 0)
-            upper = lower + int(row["bytes"]) if "hbm_offset" in row else 1 << 62
+            upper = (
+                lower + int(row.get("hbm_span", row["bytes"])) if "hbm_offset" in row else 1 << 62
+            )
             stats = (
                 connections[channel]
                 .execute(QUERY, (row["start_ps"], row["end_ps"], lower, upper))
