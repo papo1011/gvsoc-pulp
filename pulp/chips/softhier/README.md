@@ -44,12 +44,18 @@
    pulp/pulp/chips/softhier/common/sw/app_example
    ```
 
-   Two HBM benchmarks are available:
+   Four HBM benchmarks are available:
 
    - [`app_dram`](common/sw/app_dram/README.md): single-cluster dependent reads
      and DMA copies to local and distant HBM.
    - [`app_dram_multi`](common/sw/app_dram_multi/README.md): DMA with 2, 4, 8
      and 16 clusters targeting local, distinct remote or shared HBM channels.
+   - [`app_dram_bandwidth_warm`](common/sw/app_dram_bandwidth_warm/README.md): one cluster
+     reading local HBM, doubling DMA sizes from 4 bytes to 512 KiB to find a
+     bandwidth plateau and compare against the nominal single-channel peak.
+   - [`app_dram_bandwidth_streaming`](common/sw/app_dram_bandwidth_streaming/README.md):
+     the same bandwidth sweep with distinct consecutive blocks, no read warm-up
+     and sizes up to 1 MiB.
 
    Select one when building the software:
 
@@ -57,9 +63,13 @@
    make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram
    # Or build the multi-cluster benchmark:
    make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_multi
+   # Or build the single-cluster bandwidth size sweep:
+   make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_warm
+   # Or its streaming variant:
+   make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_streaming
    ```
 
-   Without `app=...`, `sh-sw` builds `app_example`. Both DRAM apps initialize
+   Without `app=...`, `sh-sw` builds `app_example`. All DRAM apps initialize
    their own data and do not need `sh-data`.
 
 6. Run the simulation:
