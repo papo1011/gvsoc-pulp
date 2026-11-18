@@ -1,55 +1,41 @@
 # Local HBM bandwidth: warm reads
 
-This benchmark asks: **how fast can one cluster reread the same HBM block as
-its size grows?** The DM core of cluster 0 reads local HBM 0 into TCDM.
+How fast can one cluster **reread the same** HBM block as its size grows? The
+DM core of cluster 0 reads local HBM 0 into TCDM. Sizes double from **4 B to
+512 KiB**: 18 sizes, three samples each, eight copies per sample.
 
-## Warm or streaming?
+> **Model caveat.** The ~57.9 GB/s limit below comes from a modeling artifact
+> in the cluster's wide-port router, not from the DRAM; copies above 4 KiB are
+> affected. See the [explanation](../app_dram_bandwidth_streaming/README.md#model-artifact-wide-port-limiter).
+> Without it the streaming sweep reaches 64.08 GB/s; the warm sweep has not
+> been re-measured.
 
-There are **two differences** from the
-[streaming app](../app_dram_bandwidth_streaming/README.md): the read warm-up and
-the source addresses used during measurement. For a block size of `N` bytes:
+## Warm vs streaming
+
+The [streaming app](../app_dram_bandwidth_streaming/README.md) uses the same
+firmware with two differences, for a block of `N` bytes:
 
 ```text
 Warm:       read A once outside the timer, then time A, A, A, ..., A
 Streaming:  no read warm-up; time A, A+N, A+2N, ..., A+7N
 ```
 
-The warm-up happens **before every sample**. It can leave useful DRAM rows open,
-so the first timed read may avoid opening them again. However, a large block
-visits many rows: the last rows left open may differ from those needed when the
-next read restarts at the beginning. All eight timed copies still read HBM.
+The warm-up runs before every sample and may leave useful DRAM rows open, but a
+large block spans many rows, so the start may need reopening. At 64 KiB the two
+apps differ by about 0.1% (56.140 vs 56.080 GB/s). Use warm reads for repeated
+data and streaming for successive data.
 
-Both apps overwrite the same TCDM buffer and **wait after each DMA copy**. The
-DMA may have several internal requests in flight. Streaming also uses distinct
-source windows across samples and sizes; it does not force DRAM rows closed.
+## What is timed
 
-**Why are the results close?** For large blocks, moving the bytes dominates the
-total time in both apps. Consecutive streaming accesses can also reuse open
-rows and use different banks. At 64 KiB, warm measured **56.140 GB/s** and
-streaming **56.080 GB/s**, a difference of about **0.11%**. Smaller blocks are
-more sensitive to initial delays. These are plausible explanations; since both
-warm-up and addresses change, the comparison does not isolate row effects.
-
-Use warm reads to study repeated data and streaming to study successive data.
-
-## What is timed?
-
-Sizes double from 4 B to 512 KiB: **18 sizes**, three samples per size, eight
-copies per sample. Setup, warm-up, full-buffer checks and printing are untimed;
-DMA issue, completion waits and clock-read overhead are included.
-
-The source is the last 512 KiB of HBM 0. The reused destination starts at TCDM
-offset `0x20000`; a separate 64 KiB staging buffer prepares the source data.
-
-**Bandwidth = 8 × bytes per copy / elapsed time.** The CSV reports median,
-minimum and maximum sample bandwidth. Small payloads can generate larger
-physical DRAM reads, reported separately by the optional database analysis.
+**Bandwidth = 8 × bytes per copy / elapsed time**, including DMA issue, waits
+and clock reads. Setup, warm-up, checks and printing are untimed. The source is
+the last 512 KiB of HBM 0; copies land at TCDM offset `0x20000`. The CSV
+reports median, minimum and maximum sample bandwidth.
 
 ## Build and run
 
-Run from the **SDK root**, after the [SoftHier environment setup](../../../README.md).
-Build hardware once, or again after changing the model. The app prepares its
-own data and needs no `sh-data`.
+From the **SDK root**, after the [SoftHier setup](../../../README.md). No
+`sh-data` is needed.
 
 ```bash
 set -e
@@ -65,9 +51,8 @@ python3 "$APP_DIR/summarize.py" "$RUN_DIR/simulation.log" \
     --report "$RUN_DIR/report.md" > "$RUN_DIR/bandwidth.csv"
 ```
 
-The summary accepts a complete run with `[dram-bandwidth] errors=0` and
-`SoftHier DRAM bandwidth: OK`. Check these rather than relying on simulator
-exit status alone. For physical DRAM statistics, with database recording enabled:
+A valid run ends with `[dram-bandwidth] errors=0` and
+`SoftHier DRAM bandwidth: OK`. With `DatabaseRecording: true` in DRAMSys:
 
 ```bash
 python3 "$APP_DIR/query_dram.py" "$RUN_DIR/simulation.log" "$RUN_DIR" \
@@ -76,40 +61,31 @@ python3 "$APP_DIR/query_dram.py" "$RUN_DIR/simulation.log" "$RUN_DIR" \
 
 ## Reading the results
 
-The report marks a plateau when the last three size medians differ by at most
-3% (max/min ≤ 1.03). Its onset is the earliest size, with two larger sizes
-remaining, after which every median stays within 5% of the maximum. Otherwise
-it reports that no plateau was found. The full sweep always runs.
+The report finds a **plateau** when the last three size medians differ by at
+most 3%. Its onset is the earliest size, with at least two larger sizes after
+it, from which every median stays within 5% of the maximum.
 
-The reference is **64 GB/s**, the nominal theoretical bus bandwidth of one HBM
-channel. Utilization is `100 × measured / 64`; `--peak-gbps` selects another
-reference. The emulation does not enforce this peak for every traffic pattern.
+The reference is **64 GB/s**, the nominal bus bandwidth of one HBM channel;
+utilization is `100 × measured / 64` (`--peak-gbps` changes it). The emulation
+does not enforce this peak exactly.
 
-The plateau describes this DMA path and access pattern, rather than proving
-full bus utilization. Both apps share firmware and analysis helpers and keep
-the same hardware and memory timings.
-
-## Bandwidth plot
+## Results
 
 ![Warm DMA read bandwidth](assets/bandwidth.png)
 
-The figure shows **1 to 128 KiB** on linear axes. The full 18-size input is in
-[assets/bandwidth.csv](assets/bandwidth.csv).
+The figure shows 1–128 KiB; all 18 sizes are in
+[assets/bandwidth.csv](assets/bandwidth.csv). The dotted line is the large-copy
+limit fitted with `T(N) = alpha + beta·N` on 64/128/256 KiB: `alpha = 35.375 ns`,
+`1/beta = 57.894 GB/s`, matching the excluded 512 KiB point. This limit is the
+wide-port artifact (see the caveat above); the fit is explained in the
+[streaming guide](../app_dram_bandwidth_streaming/README.md#how-the-asymptote-is-calculated).
 
-The dashed line is the **64 GB/s theoretical bandwidth** reference. The dotted
-line estimates the large-copy limit at **57.894 GB/s**. We fit
-`T(N) = alpha + beta * N` to the 64/128/256 KiB times, giving `alpha = 35.375 ns`
-and a limit of `1 / beta`. The excluded 512 KiB point matches the prediction
-(9091.375 ns) at CSV precision. This estimate describes this DMA pattern; see the
-[model explanation](../app_dram_bandwidth_streaming/README.md#how-the-asymptote-is-calculated).
-
-To regenerate the image from the SDK root, using the local Python with Matplotlib:
+To regenerate the figure:
 
 ```bash
 APP_DIR="$PWD/pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_warm"
 pulp/.venv/bin/python "$APP_DIR/plot.py" "$APP_DIR/assets/bandwidth.csv"
 ```
 
-For a new run, use `"$RUN_DIR/bandwidth.csv"` as input. The script saves PNG and
-SVG in this app's `assets/`; `--output /path/to/figure.png` selects another path.
-Both apps use `dram_common/plot_bandwidth.py`, so their plots stay consistent.
+Use `"$RUN_DIR/bandwidth.csv"` for a new run, or `--output path.png` to save
+elsewhere.
