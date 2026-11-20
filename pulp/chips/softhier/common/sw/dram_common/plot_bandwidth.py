@@ -71,7 +71,27 @@ def main(pattern, assets):
         elif size == 2:
             label.set_ha("left")
     # Replace nearby standard ticks with the estimate to keep labels legible.
-    ticks = sorted({value for value in range(0, 71, 10) if abs(value - limit) >= 3} | {peak, limit})
+    # When the estimate is too close to the theoretical reference for two axis
+    # labels, write its value next to its line instead.
+    close = abs(limit - peak) < 3
+    ticks = sorted(
+        {value for value in range(0, 71, 10) if abs(value - limit) >= 3 and abs(value - peak) >= 3}
+        | {peak}
+        | (set() if close else {limit})
+    )
+    if close:
+        ax.annotate(
+            f"{limit:.2f}",
+            (1, limit),
+            xycoords=("axes fraction", "data"),
+            xytext=(-4, 3),
+            textcoords="offset points",
+            ha="right",
+            va="bottom",
+            fontsize=9,
+            fontweight="bold",
+            color="#8660a8",
+        )
     ax.set_yticks(ticks, [f"{value:.2f}" if value == limit else f"{value:g}" for value in ticks])
     for tick, label in zip(ax.get_yticks(), ax.get_yticklabels()):
         if tick == peak:
