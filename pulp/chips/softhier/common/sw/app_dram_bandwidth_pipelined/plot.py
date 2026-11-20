@@ -77,7 +77,14 @@ def main():
             color=COLOR,
         )
     if onset:
-        ax.axvspan(onset / 1.2, x[-1] * 1.3, color=COLOR, alpha=0.06, linewidth=0)
+        ax.axvspan(
+            onset / 1.2,
+            x[-1] * 1.3,
+            color=COLOR,
+            alpha=0.06,
+            linewidth=0,
+            label="Plateau region (≥ 95% of the measured maximum)",
+        )
         ax.axhline(
             level,
             color=COLOR,
