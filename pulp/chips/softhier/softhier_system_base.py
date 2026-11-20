@@ -209,7 +209,17 @@ class SoftHierSystem(gvsoc.systree.Component):
                                  size=arch.num_cluster * arch.hbm_node_addr_space,
                                  rm_base=False)
 
-            wide_arbiter = router.Router(self, f'wide_arbiter_{cluster_id}', bandwidth=arch.noc_link_width)
+            # Asynchronous router: bursts are queued and leave spaced by the port
+            # bandwidth, and responses from the NoC/DRAM pass straight back. The
+            # synchronous router charged a read's data at request time and the
+            # iDMA added that wait again after the asynchronous DRAM response,
+            # capping single-cluster HBM reads at ~57.9 GB/s.
+            wide_arbiter = router.Router(
+                self,
+                f'wide_arbiter_{cluster_id}',
+                bandwidth=arch.noc_link_width,
+                synchronous=False,
+            )
             wide_arbiter.o_MAP(virtual_interco.i_INPUT())
             wide_arbiter.o_MAP(noc.i_WIDE_INPUT(ni_node_id),
                                name="tcdm",
