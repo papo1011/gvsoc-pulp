@@ -4,9 +4,10 @@ How fast can one cluster **reread the same** HBM block as its size grows? The
 DM core of cluster 0 reads local HBM 0 into TCDM. Sizes double from **4 B to
 512 KiB**: 18 sizes, three samples each, eight copies per sample.
 
-> **Model caveat.** The ~57.9 GB/s limit below comes from a modeling artifact
-> in the cluster's wide-port router, not from the DRAM; copies above 4 KiB are
-> affected. See the [explanation](../app_dram_bandwidth_streaming/README.md#model-artifact-wide-port-limiter).
+> **Not re-measured.** These results come from the synchronous wide-port
+> arbiter, whose modeling artifact caps copies above 4 KiB at ~57.9 GB/s. With
+> the asynchronous arbiter now in use, the streaming sweep reaches 64.08 GB/s at
+> 1 MiB; re-run this sweep before comparing. See the [explanation](../app_dram_bandwidth_streaming/README.md#wide-port-arbiter-model).
 
 ## Warm vs streaming
 
@@ -75,7 +76,7 @@ The figure shows 1–128 KiB; all 18 sizes are in
 [assets/bandwidth.csv](assets/bandwidth.csv). The dotted line is the large-copy
 limit fitted with `T(N) = alpha + beta·N` on 64/128/256 KiB: `alpha = 35.375 ns`,
 `1/beta = 57.894 GB/s`, matching the excluded 512 KiB point. This limit is the
-wide-port artifact (see the caveat above); the fit is explained in the
+synchronous wide-port artifact (see the note above); the fit is explained in the
 [streaming guide](../app_dram_bandwidth_streaming/README.md#how-the-asymptote-is-calculated).
 
 To regenerate the figure:

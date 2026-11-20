@@ -4,9 +4,9 @@ How fast can one cluster read **successive** HBM blocks as the copy size grows?
 The DM core of cluster 0 reads its local HBM 0 into TCDM. Sizes double from
 **4 B to 1 MiB**: 19 sizes, three samples each, eight copies per sample.
 
-> **Model caveat.** The ~57.9 GB/s plateau below is set by a modeling artifact
-> in the cluster's wide-port router, not by the DRAM, which delivers data at
-> ~64.3 GB/s. See [Model artifact](#model-artifact-wide-port-limiter).
+> **Wide-port model.** These results use the asynchronous wide-port arbiter.
+> The earlier synchronous arbiter capped large copies at ~57.9 GB/s through a
+> modeling artifact; see [Wide-port arbiter model](#wide-port-arbiter-model).
 
 ## Streaming vs warm
 
@@ -20,10 +20,11 @@ Warm:       read A once outside the timer, then time A, A, A, ..., A
 
 Every streaming sample reads a distinct source window. Both apps reuse one TCDM
 buffer and wait for each DMA copy before starting the next. No warm-up does not
-mean closed rows: consecutive blocks can still hit open rows. At 64 KiB the two
-apps differ by about 0.1% (56.080 vs 56.140 GB/s): for large blocks moving the
-bytes dominates. Since both warm-up and addresses change, this comparison does
-not isolate row effects.
+mean closed rows: consecutive blocks can still hit open rows. With the
+synchronous arbiter the two apps differed by about 0.1% at 64 KiB (56.080 vs
+56.140 GB/s): for large blocks moving the bytes dominates. Since both warm-up
+and addresses change, this comparison does not isolate row effects. The warm
+sweep has not been re-measured with the asynchronous arbiter.
 
 ## What is timed
 
@@ -65,7 +66,7 @@ python3 "$ANALYSIS_DIR/query_dram.py" "$RUN_DIR/simulation.log" "$RUN_DIR" \
     > "$RUN_DIR/dram.csv"
 ```
 
-Each sweep with recording writes ~2 GB of databases; delete the `.tdb` files
+Each sweep with recording writes 2–4 GB of databases; delete the `.tdb` files
 once `dram.csv` exists. The plateau criterion and the 64 GB/s reference are
 described in the [warm guide](../app_dram_bandwidth_warm/README.md#reading-the-results).
 
@@ -73,9 +74,11 @@ described in the [warm guide](../app_dram_bandwidth_warm/README.md#reading-the-r
 
 ![Streaming DMA read bandwidth](assets/bandwidth.png)
 
-All 57 samples passed the data and DRAM traffic checks. The plateau starts at
-**64 KiB**; at **1 MiB** bandwidth is **57.777 GB/s** (90.3% of the 64 GB/s
-nominal). The figure shows 1–128 KiB; all data is in
+Measured on 2026-11-20 with the asynchronous wide-port arbiter. All 57 samples
+passed the data and DRAM traffic checks. The plateau starts at **64 KiB**; at
+**1 MiB** bandwidth is **64.076 GB/s**, the rate at which DRAMSys delivers data.
+That is 100.1% of the 64 GB/s nominal: the emulation does not enforce the
+nominal peak exactly. The figure shows 1–128 KiB; all data is in
 [assets/bandwidth.csv](assets/bandwidth.csv).
 
 ### How the asymptote is calculated
@@ -86,38 +89,54 @@ $$
 T(N)=\alpha+\beta N,\qquad B_{\infty}=1/\beta.
 $$
 
-`plot.py` fits the 64, 128 and 256 KiB points, giving `alpha = 36.625 ns` and
-`1/beta = 57.894 GB/s`. The excluded 512 KiB and 1 MiB points match the
-prediction exactly (9092.625 and 18148.625 ns per copy). The fitted limit is
-the artifact described next: about 7 ns lost per 4 KiB burst.
+`plot.py` fits the 64, 128 and 256 KiB points, giving `alpha = 44.625 ns` and
+`1/beta = 64.251 GB/s` (63.75 ns per 4 KiB burst). The excluded 512 KiB and
+1 MiB points match the prediction exactly (8204.625 and 16364.625 ns per copy).
+`alpha` is an effective fixed cost, not a separate measurement of DMA startup.
 
-## Model artifact: wide-port limiter
+## Wide-port arbiter model
 
 Each cluster's iDMA reaches the NoC through `wide_arbiter_<cluster>`
-([softhier_system_base.py](../../../softhier_system_base.py)), a synchronous
-router with `bandwidth=noc_link_width` (512 B/cycle). It models the cluster's
-wide AXI port, but:
+([softhier_system_base.py](../../../softhier_system_base.py)), a router with
+`bandwidth=noc_link_width` (512 B/cycle) that models the cluster's wide AXI port.
 
-1. The router charges a read burst's data **when the request passes**
-   (`BandwidthLimiter::apply_bandwidth` in `core/models/interco/router/router.cpp`)
-   and stores the wait in the request latency.
-2. The iDMA splits a copy into 4 KiB bursts and issues one per cycle. Each
-   counts as 8 cycles (4096 / 512), so burst *k* gets **7·k cycles** of latency.
-3. The DRAM responds asynchronously. The iDMA AXI backend
-   (`pulp/idma/be/idma_be_axi.cpp`) **adds** that latency to the real response
-   time, so the queueing is counted twice.
+**Synchronous router (previous default): artifact.** It charged a read burst's
+data **when the request passed** (`BandwidthLimiter::apply_bandwidth` in
+`core/models/interco/router/router.cpp`) and stored the wait in the request
+latency, without delaying the request. The iDMA issues one 4 KiB burst per
+cycle, each counted as 8 cycles, so burst *k* got **7·k cycles** of latency.
+The DRAM then served the bursts at its own pace, and the iDMA AXI backend
+(`pulp/idma/be/idma_be_axi.cpp`) **added** that latency to the real response:
+the queueing was counted twice. Each 4 KiB burst cost 63.75 ns of DRAM time plus
+7 ns, so 4096 / 70.75 ≈ 57.9 GB/s. In hardware the R channel carries the data
+while it comes back, overlapping DRAM time.
 
-A 4 KiB burst therefore costs 63.75 ns of DRAM time plus 7 ns, which gives
-4096 / 70.75 ≈ 57.9 GB/s, while DRAMSys delivers data at ~64.3 GB/s. In hardware
-the R channel would carry those 8 beats while the data comes back, overlapping
-DRAM time; at 512 GB/s the port should never limit one HBM channel.
+**Asynchronous router (`synchronous=False`, current).** Requests are queued and
+leave the port spaced by its bandwidth (one 4 KiB burst every 8 cycles);
+responses pass straight back with no added latency. Against a DRAM that serves
+one burst every ~64 ns the spacing costs nothing, while a fast target would
+still be limited to 512 B/cycle. It throttles the request side rather than the
+R channel, so it is not a beat-accurate AXI model, but the throughput is right
+and nothing is counted twice. The router adds one cycle per request: it shows
+on single-burst copies (4 KiB: 108.875 instead of 108.625 ns per copy in the
+median) and on small write/readback copies, where the iDMA sends write chunks
+of 512 B one at a time.
 
-**Unaffected:** copies of a single 4 KiB burst or less, writes (the backend
-ignores write latency) and the narrow path (scalar loads).
+Streaming sweep, same firmware, both routers (copies below 4 KiB vary by a few
+ns per sample with DRAM state in both runs):
 
-The trace shows it with
-`--trace=/system/cluster_0/idma/axi_read --trace-level=trace`: lines
-`Handling end of read request (... latency N)` grow by 7 per burst.
+| Copy | Synchronous router | Asynchronous router |
+| ---: | ---: | ---: |
+| 4 KiB | 37.708 GB/s | 37.621 GB/s |
+| 16 KiB | 51.421 GB/s | 54.500 GB/s |
+| 64 KiB | 56.080 GB/s | 61.558 GB/s |
+| 256 KiB | 57.429 GB/s | 63.556 GB/s |
+| 1 MiB | 57.777 GB/s | 64.076 GB/s |
+
+The trace shows the difference with
+`--trace=/system/cluster_0/idma/axi_read --trace-level=trace`: the lines
+`Handling end of read request (... latency N)` grow by 7 per burst with the
+synchronous router and stay at 0 with the asynchronous one.
 
 ## Regenerate the figure
 

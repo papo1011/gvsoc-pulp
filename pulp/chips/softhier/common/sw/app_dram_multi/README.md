@@ -5,12 +5,11 @@ DMA throughput and contention on SoftHier v1's default **4×4 mesh**, with
 DM core of each active cluster drives its iDMA; the rest stays idle. The
 single-cluster benchmark is [app_dram](../app_dram/README.md).
 
-> **Model caveat.** Each cluster has its own wide-port router with a modeling
-> artifact that adds about 105 ns to every 64 KiB read (16 bursts of 4 KiB,
-> 7 ns each). See the [explanation](../app_dram_bandwidth_streaming/README.md#model-artifact-wide-port-limiter).
-> 4 KiB transfers (one burst) are not affected; write/readback is affected only
-> through its readback. The cost is per copy, so it should weigh less when DRAM
-> contention already slows transfers.
+> **Wide-port model.** Each cluster reaches the NoC through its own wide-port
+> arbiter, now asynchronous. Results obtained with the earlier synchronous
+> arbiter include a modeling artifact of about 104 ns per 64 KiB read; see the
+> [explanation](../app_dram_bandwidth_streaming/README.md#wide-port-arbiter-model). This sweep has not been re-run with the asynchronous
+> arbiter.
 
 ## Scenarios
 

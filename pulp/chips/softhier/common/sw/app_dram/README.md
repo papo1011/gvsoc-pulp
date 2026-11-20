@@ -5,13 +5,9 @@ SoftHier v1? Only the DM core (last core) of cluster 0 runs. On the default 4×4
 mesh it compares channel 0 (`local`, 0 hops) with channel 15 (`far`, 6 hops).
 For the multi-cluster sweep, see [app_dram_multi](../app_dram_multi/README.md).
 
-> **Model caveat.** The 64 KiB DMA results include a modeling artifact in the
-> cluster's wide-port router: each 64 KiB read pays about 105 ns extra (16 bursts
-> of 4 KiB, 7 ns each). See the [explanation](../app_dram_bandwidth_streaming/README.md#model-artifact-wide-port-limiter).
-> Dependent loads (narrow path) and 64 B / 4 KiB copies (one burst) are not
-> affected; write/readback is affected only through its readback. Local and far
-> pay the same cost, so their comparison holds, but absolute DMA bandwidth is
-> underestimated.
+> **Wide-port model.** The reference results use the asynchronous wide-port
+> arbiter. The earlier synchronous arbiter added about 104 ns to every 64 KiB
+> read through a modeling artifact; see the [explanation](../app_dram_bandwidth_streaming/README.md#wide-port-arbiter-model).
 
 ## What it measures
 
@@ -66,14 +62,19 @@ python3 "$APP_DIR/query_dram.py" "$RUN_DIR/simulation.log" "$RUN_DIR" > "$RUN_DI
 
 Missing `start_ps`/`end_ps` means the hardware must be rebuilt (`make sh-hw`).
 
-Reference run (2026-11-11), defaults: 1 GHz, `link_latency=1`,
-`noc_link_width=512` bytes. All 14 measurements without errors:
+Reference run (2026-11-20, asynchronous wide-port arbiter), defaults: 1 GHz,
+`link_latency=1`, `noc_link_width=512` bytes. All 14 measurements without errors:
 
 | Metric | Local | Far |
 | --- | ---: | ---: |
-| Dependent read, ns/load | 13.508 | 36.430 |
-| 64 KiB DMA read, payload GB/s | 56.164 | 55.032 |
-| 64 KiB DMA write/readback, combined payload GB/s | 60.046 | 58.754 |
+| Dependent read, ns/load | 13.766 | 36.969 |
+| 64 KiB DMA read, payload GB/s | 61.659 | 60.298 |
+| 64 KiB DMA write/readback, combined payload GB/s | 62.985 | 61.565 |
+
+Compared with the synchronous arbiter, each 64 KiB copy is about 104 ns faster
+(read) and 102 ns faster (write/readback); single-burst write/readback copies
+are 10–14 ns slower, because the asynchronous arbiter adds one cycle to each
+512 B write chunk and the iDMA sends them one at a time.
 
 Distance mostly affects dependent loads; large DMA copies reach similar
 throughput. Runtime options go in `RUN_ARGS` (e.g.
