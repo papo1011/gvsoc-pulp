@@ -7,8 +7,6 @@ DM core of cluster 0 reads local HBM 0 into TCDM. Sizes double from **4 B to
 > **Model caveat.** The ~57.9 GB/s limit below comes from a modeling artifact
 > in the cluster's wide-port router, not from the DRAM; copies above 4 KiB are
 > affected. See the [explanation](../app_dram_bandwidth_streaming/README.md#model-artifact-wide-port-limiter).
-> Without it the streaming sweep reaches 64.08 GB/s; the warm sweep has not
-> been re-measured.
 
 ## Warm vs streaming
 

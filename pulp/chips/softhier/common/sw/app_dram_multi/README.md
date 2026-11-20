@@ -10,8 +10,7 @@ single-cluster benchmark is [app_dram](../app_dram/README.md).
 > 7 ns each). See the [explanation](../app_dram_bandwidth_streaming/README.md#model-artifact-wide-port-limiter).
 > 4 KiB transfers (one burst) are not affected; write/readback is affected only
 > through its readback. The cost is per copy, so it should weigh less when DRAM
-> contention already slows transfers. 64 KiB results have not been re-measured
-> without it.
+> contention already slows transfers.
 
 ## Scenarios
 

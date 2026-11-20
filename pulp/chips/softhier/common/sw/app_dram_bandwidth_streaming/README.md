@@ -5,8 +5,8 @@ The DM core of cluster 0 reads its local HBM 0 into TCDM. Sizes double from
 **4 B to 1 MiB**: 19 sizes, three samples each, eight copies per sample.
 
 > **Model caveat.** The ~57.9 GB/s plateau below is set by a modeling artifact
-> in the cluster's wide-port router, not by the DRAM. Without it the same sweep
-> reaches **64.08 GB/s** at 1 MiB. See [Model artifact](#model-artifact-wide-port-limiter).
+> in the cluster's wide-port router, not by the DRAM, which delivers data at
+> ~64.3 GB/s. See [Model artifact](#model-artifact-wide-port-limiter).
 
 ## Streaming vs warm
 
@@ -115,21 +115,9 @@ DRAM time; at 512 GB/s the port should never limit one HBM channel.
 **Unaffected:** copies of a single 4 KiB burst or less, writes (the backend
 ignores write latency) and the narrow path (scalar loads).
 
-To remove it, set `bandwidth=0` on `wide_arbiter` in `softhier_system_base.py`
-and run `make sh-hw`. The trace shows it with
+The trace shows it with
 `--trace=/system/cluster_0/idma/axi_read --trace-level=trace`: lines
-`Handling end of read request (... latency N)` grow by 7 per burst. Streaming
-sweep, same firmware, with and without the limiter (2026-11-18, all samples OK):
-
-| Copy | Default model | `bandwidth=0` |
-| ---: | ---: | ---: |
-| 4 KiB | 37.708 GB/s | 37.708 GB/s |
-| 64 KiB | 56.080 GB/s | 61.558 GB/s |
-| 256 KiB | 57.429 GB/s | 63.556 GB/s |
-| 1 MiB | 57.777 GB/s | 64.076 GB/s |
-
-Without the limiter the fitted asymptote is ~64.25 GB/s, the DRAMSys data rate.
-The emulation slightly exceeds the 64 GB/s nominal peak, which it does not enforce.
+`Handling end of read request (... latency N)` grow by 7 per burst.
 
 ## Regenerate the figure
 
