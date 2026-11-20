@@ -98,3 +98,10 @@ below nominal is the fixed cost at the start and end of each sample. Row
 changes are hidden by bank parallelism, and refreshes are postponed out of these
 short samples (`RefreshMaxPostponed` allows 128, about 160 µs); a longer
 continuous stream would pay for them.
+
+![Pipelined contiguous read bandwidth with CCDS = 4](assets/bandwidth_ccds4.png)
+
+The `CCDS = 4` sweep: plateau from 16 KiB at 63.87 GB/s. Values are in
+[assets/bandwidth_ccds4.csv](assets/bandwidth_ccds4.csv). To reproduce it, copy
+`dramsys_configs/` from the directory `DRAMSYS_PATH` points to, set `"CCDS": 4`
+in `memspec/HBM4-emulation-4000.json`, and point `DRAMSYS_PATH` at the copy.
