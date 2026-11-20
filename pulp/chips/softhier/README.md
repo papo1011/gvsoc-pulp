@@ -44,7 +44,7 @@
    pulp/pulp/chips/softhier/common/sw/app_example
    ```
 
-   Five HBM benchmarks are available:
+   Six HBM benchmarks are available:
 
    - [`app_dram`](common/sw/app_dram/README.md): single-cluster dependent reads
      and DMA copies to local and distant HBM.
@@ -59,6 +59,9 @@
    - [`app_dram_bandwidth_tiled`](common/sw/app_dram_bandwidth_tiled/README.md):
      datasets from 512 to 2048 KiB, with extra points around the 1 MiB TCDM
      limit to measure the cost of a small final DMA copy.
+   - [`app_dram_bandwidth_pipelined`](common/sw/app_dram_bandwidth_pipelined/README.md):
+     contiguous reads from 64 B to 512 KiB with eight DMA copies in flight, to
+     find the sustained read plateau.
 
    Select one when building the software:
 
