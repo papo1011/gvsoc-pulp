@@ -5,11 +5,15 @@ import argparse
 import csv
 from pathlib import Path
 from statistics import linear_regression
+import sys
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from app_dram_bandwidth_warm.summarize import plateau
 
 
 def estimate_limit(rows):
@@ -32,6 +36,15 @@ def main(pattern, assets):
     with args.csv.open() as source:
         all_rows = list(csv.DictReader(source))
     limit, alpha = estimate_limit(all_rows)
+    onset = plateau(
+        sorted(
+            (
+                {"bytes": int(row["bytes"]), "median_GB_per_s": float(row["median_GB_per_s"])}
+                for row in all_rows
+            ),
+            key=lambda point: point["bytes"],
+        )
+    )
     rows = sorted(
         (row for row in all_rows if 1024 <= int(row["bytes"]) <= 128 * 1024),
         key=lambda row: int(row["bytes"]),
@@ -41,16 +54,28 @@ def main(pattern, assets):
     peak = float(rows[0]["nominal_peak_GB_per_s"])
     fig, ax = plt.subplots(figsize=(12, 5), layout="constrained")
     ax.plot(x, y, "o-", color="#287f8e", label="Measured DMA read bandwidth (median)")
+    # Below and right of each point, away from the rising curve; the last
+    # point is labelled on its left to stay inside the axes.
     for size, rate in zip(x, y):
+        last = size == x[-1]
         ax.annotate(
             f"{rate:.2f}",
             (size, rate),
-            xytext=(-6 if size == x[-1] else 6, -16 if rate > limit - 4 else 9),
+            xytext=(-6 if last else 6, -6),
             textcoords="offset points",
-            ha="right" if size == x[-1] else "left",
-            va="top" if rate > limit - 4 else "bottom",
+            ha="right" if last else "left",
+            va="top",
             fontsize=9,
             color="#287f8e",
+        )
+    if onset and onset <= 128 * 1024:
+        ax.axvspan(
+            onset / 1024 - 4,
+            133,
+            color="#287f8e",
+            alpha=0.06,
+            linewidth=0,
+            label="Plateau region (≥ 95% of the measured maximum)",
         )
     ax.axhline(peak, color="#ba6540", linestyle="--", label="Theoretical bandwidth")
     ax.axhline(
