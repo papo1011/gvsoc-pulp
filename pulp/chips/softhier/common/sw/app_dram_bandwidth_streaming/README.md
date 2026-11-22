@@ -4,9 +4,12 @@ How fast can one cluster read **successive** HBM blocks as the copy size grows?
 The DM core of cluster 0 reads its local HBM 0 into TCDM. Sizes double from
 **4 B to 1 MiB**: 19 sizes, three samples each, eight copies per sample.
 
-> **Wide-port model.** These results use the asynchronous wide-port arbiter.
-> The earlier synchronous arbiter capped large copies at ~57.9 GB/s through a
-> modeling artifact; see [Wide-port arbiter model](#wide-port-arbiter-model).
+> **Simulator setup.** These results use the asynchronous wide-port arbiter and
+> DRAMSys with `CCDS = 4`. The earlier synchronous arbiter capped large copies
+> at ~57.9 GB/s through a modeling artifact (see
+> [Wide-port arbiter model](#wide-port-arbiter-model)); the shared DRAMSys
+> configuration's `CCDS = 2` lets bursts overlap on the data bus and exceed
+> 64 GB/s (see the [pipelined guide](../app_dram_bandwidth_pipelined/README.md#why-the-plateau-exceeds-64-gbs)).
 
 ## Streaming vs warm
 
@@ -40,7 +43,10 @@ offset `0x20000`; the 1 MiB copy uses the whole TCDM (the app has no persistent
 ## Build and run
 
 From the **SDK root**, after the [SoftHier setup](../../../README.md). No
-`sh-data` is needed; the simulation takes several minutes.
+`sh-data` is needed; the simulation takes about 15 minutes. The results below
+use `CCDS = 4`: copy `dramsys_configs/` from the directory `DRAMSYS_PATH`
+points to, set `"CCDS": 4` in `memspec/HBM4-emulation-4000.json`, and export
+`DRAMSYS_PATH` pointing at the copy before `make sh-run`.
 
 ```bash
 set -e
@@ -74,12 +80,26 @@ described in the [warm guide](../app_dram_bandwidth_warm/README.md#reading-the-r
 
 ![Streaming DMA read bandwidth](assets/bandwidth.png)
 
-Measured on 2026-11-20 with the asynchronous wide-port arbiter. All 57 samples
-passed the data and DRAM traffic checks. The plateau starts at **64 KiB**; at
-**1 MiB** bandwidth is **64.076 GB/s**, the rate at which DRAMSys delivers data.
-That is 100.1% of the 64 GB/s nominal: the emulation does not enforce the
-nominal peak exactly. The figure shows 1–128 KiB; all data is in
+Measured on 2026-11-22 with the asynchronous wide-port arbiter and DRAMSys
+with `CCDS = 4`. All 57 samples passed the data check, and the DRAM read exactly
+the payload bytes (copies below 32 B read one 32 B burst). The plateau starts
+at **64 KiB**; at **1 MiB** bandwidth is **63.786 GB/s**, 99.7% of the 64 GB/s
+nominal, and DRAMSys delivers 63.79 GB/s during that sample. The shaded band is
+the plateau region (every median from there on is at least 95% of the measured
+maximum). The figure shows 1–128 KiB; all data is in
 [assets/bandwidth.csv](assets/bandwidth.csv).
+
+| Copy | `CCDS = 2` (2026-11-20) | `CCDS = 4` |
+| ---: | ---: | ---: |
+| 4 KiB | 37.621 GB/s | 35.046 GB/s |
+| 16 KiB | 54.500 GB/s | 53.521 GB/s |
+| 64 KiB | 61.558 GB/s | 61.042 GB/s |
+| 256 KiB | 63.556 GB/s | 63.177 GB/s |
+| 1 MiB | 64.076 GB/s | 63.786 GB/s |
+
+With `CCDS = 2` the 1 MiB point exceeded the nominal peak. Small copies lose
+the most: a 4 KiB copy takes 116.875 ns instead of 108.875 ns, because the
+overlapping bursts that `CCDS = 2` allowed shortened every copy's data phase.
 
 ### How the asymptote is calculated
 
@@ -89,10 +109,12 @@ $$
 T(N)=\alpha+\beta N,\qquad B_{\infty}=1/\beta.
 $$
 
-`plot.py` fits the 64, 128 and 256 KiB points, giving `alpha = 44.625 ns` and
-`1/beta = 64.251 GB/s` (63.75 ns per 4 KiB burst). The excluded 512 KiB and
-1 MiB points match the prediction exactly (8204.625 and 16364.625 ns per copy).
-`alpha` is an effective fixed cost, not a separate measurement of DMA startup.
+`plot.py` fits the 64, 128 and 256 KiB points, giving `alpha = 50.125 ns` and
+`1/beta = 63.938 GB/s` (64.06 ns per 4 KiB burst). The excluded 512 KiB and
+1 MiB points are within 0.1% of the prediction (8242.375 and 16438.875 ns per
+copy measured, 8250.125 and 16450.125 ns predicted). `alpha` is an effective
+fixed cost, not a separate measurement of DMA startup. With `CCDS = 2` the same
+fit gave 64.251 GB/s, above the nominal peak.
 
 ## Wide-port arbiter model
 
@@ -122,8 +144,9 @@ on single-burst copies (4 KiB: 108.875 instead of 108.625 ns per copy in the
 median) and on small write/readback copies, where the iDMA sends write chunks
 of 512 B one at a time.
 
-Streaming sweep, same firmware, both routers (copies below 4 KiB vary by a few
-ns per sample with DRAM state in both runs):
+Streaming sweep, same firmware, both routers, both with the shared `CCDS = 2`
+DRAMSys configuration (copies below 4 KiB vary by a few ns per sample with DRAM
+state in both runs):
 
 | Copy | Synchronous router | Asynchronous router |
 | ---: | ---: | ---: |

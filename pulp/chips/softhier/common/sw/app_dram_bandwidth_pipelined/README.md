@@ -67,8 +67,10 @@ maximum. The plateau level is the mean of the last three sizes. The figure
 starts at 8 KiB; all values are in [assets/bandwidth.csv](assets/bandwidth.csv).
 
 Keeping eight copies in flight matters for small blocks: a 4 KiB read reaches
-58.00 GB/s here against 37.62 GB/s in the streaming sweep, which pays the full
-latency of every copy. At 512 KiB the two converge (64.20 vs 63.90 GB/s).
+58.00 GB/s here against 37.62 GB/s in the streaming sweep with the same
+configuration, which pays the full latency of every copy. At 512 KiB the two
+converge (64.20 vs 63.90 GB/s). With `CCDS = 4` the gap is the same: 57.39 vs
+35.05 GB/s at 4 KiB, 63.94 vs 63.61 GB/s at 512 KiB.
 
 ## Why the plateau exceeds 64 GB/s
 

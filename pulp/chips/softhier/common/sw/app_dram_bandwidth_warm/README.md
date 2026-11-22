@@ -6,8 +6,8 @@ DM core of cluster 0 reads local HBM 0 into TCDM. Sizes double from **4 B to
 
 > **Not re-measured.** These results come from the synchronous wide-port
 > arbiter, whose modeling artifact caps copies above 4 KiB at ~57.9 GB/s. With
-> the asynchronous arbiter now in use, the streaming sweep reaches 64.08 GB/s at
-> 1 MiB; re-run this sweep before comparing. See the [explanation](../app_dram_bandwidth_streaming/README.md#wide-port-arbiter-model).
+> the asynchronous arbiter now in use and DRAMSys `CCDS = 4`, the streaming sweep
+> reaches 63.79 GB/s at 1 MiB; re-run this sweep before comparing. See the [explanation](../app_dram_bandwidth_streaming/README.md#wide-port-arbiter-model).
 
 ## Warm vs streaming
 
