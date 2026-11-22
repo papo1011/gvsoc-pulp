@@ -92,7 +92,9 @@ class BandwidthAnalysisTest(unittest.TestCase):
                     INSERT INTO GeneralInfo VALUES ('PS');
                     CREATE TABLE Transactions (ID INTEGER, Command TEXT, DataLength INTEGER,
                                                TimeOfGeneration INTEGER, Address INTEGER);
-                    CREATE TABLE Phases (Transact INTEGER, PhaseName TEXT, PhaseEnd INTEGER);
+                    CREATE TABLE Phases (Transact INTEGER, PhaseName TEXT, PhaseEnd INTEGER,
+                                         DataStrobeBegin INTEGER, DataStrobeEnd INTEGER,
+                                         Rank INTEGER);
                 """)
                 # The ninth block is outside the sample and must not be counted.
                 for index in range(9):
@@ -100,9 +102,16 @@ class BandwidthAnalysisTest(unittest.TestCase):
                         "INSERT INTO Transactions VALUES (?, 'R', 64, 110, ?)",
                         (index, 4096 + index * 64),
                     )
-                    db.execute("INSERT INTO Phases VALUES (?, 'RESP', 150)", (index,))
+                    db.execute("INSERT INTO Phases VALUES (?, 'RESP', 150, 0, 0, 0)", (index,))
+                    # Two bursts on alternating pseudo-channels, 2 ns per pair.
+                    db.execute(
+                        "INSERT INTO Phases VALUES (?, 'RD', 0, ?, ?, ?)",
+                        (index, 1000 + index * 1000, 2000 + index * 1000, index % 2),
+                    )
             results = query_measurements((), [row], directory)
         self.assertEqual(results[0][1:3], (8, 512))
+        # Bursts 0..7 span 1..9 ns: 512 B / 8 ns, each pseudo-channel busy half the time.
+        self.assertEqual(results[0][-3:], ("8.000", "64.000000", "50.00"))
 
     def test_extended_sweep_keeps_old_offsets_and_adds_disjoint_one_mib_windows(self):
         lines = []

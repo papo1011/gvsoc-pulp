@@ -20,14 +20,20 @@ def payload_bytes(row):
 
 # Select requests generated during the CPU's measurement, including their
 # responses even if they finish after the interval. X denotes maintenance
-# transactions (e.g. refresh), not program reads/writes.
+# transactions (e.g. refresh), not program reads/writes. The column command's
+# data strobe is when its burst occupies the data bus of its pseudo-channel
+# (Rank): from the first burst's start to the last burst's end is the DRAM-side
+# window, without the cost of reaching the DRAM or returning the data.
 QUERY = """
 SELECT t.Command, COUNT(*), SUM(t.DataLength),
        AVG(p.PhaseEnd - t.TimeOfGeneration),
        MIN(p.PhaseEnd - t.TimeOfGeneration),
-       MAX(p.PhaseEnd - t.TimeOfGeneration)
+       MAX(p.PhaseEnd - t.TimeOfGeneration),
+       MIN(d.DataStrobeBegin), MAX(d.DataStrobeEnd),
+       SUM(d.DataStrobeEnd - d.DataStrobeBegin), COUNT(DISTINCT d.Rank)
 FROM Transactions AS t
 JOIN Phases AS p ON p.Transact = t.ID AND p.PhaseName = 'RESP'
+JOIN Phases AS d ON d.Transact = t.ID AND d.PhaseName IN ('RD', 'RDA', 'WR', 'WRA')
 WHERE t.Command IN ('R', 'W')
   AND t.TimeOfGeneration >= ? AND t.TimeOfGeneration < ?
   AND t.Address >= ? AND t.Address < ?
@@ -74,7 +80,9 @@ def query_measurements(fields, measurements, directory):
             expected = {"R", "W"} if row["operation"] == "dma_write_readback" else {"R"}
             if commands != expected:
                 raise ValueError(f"Expected directions {expected}, found {commands}")
-            for command, count, byte_count, avg, minimum, maximum in stats:
+            for command, count, byte_count, avg, minimum, maximum, *bus in stats:
+                bus_begin, bus_end, busy, pseudo_channels = bus
+                window = bus_end - bus_begin
                 results.append(
                     (
                         *(row[field] for field in fields),
@@ -85,6 +93,9 @@ def query_measurements(fields, measurements, directory):
                         f"{minimum / 1000:.3f}",
                         f"{maximum / 1000:.3f}",
                         f"{byte_count * 1000 / (row['end_ps'] - row['start_ps']):.6f}",
+                        f"{window / 1000:.3f}",
+                        f"{byte_count * 1000 / window:.6f}",
+                        f"{busy * 100 / (window * pseudo_channels):.2f}",
                     )
                 )
     return results
@@ -147,6 +158,9 @@ def query_main(fields, measurements):
             "min_latency_ns",
             "max_latency_ns",
             "dram_GB_per_s",
+            "bus_window_ns",
+            "bus_GB_per_s",
+            "bus_occupancy_percent",
         )
     )
     writer.writerows(rows)
