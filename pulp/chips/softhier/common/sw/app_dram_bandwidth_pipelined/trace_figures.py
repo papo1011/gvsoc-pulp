@@ -1,9 +1,13 @@
-"""Slide-sized figure drawn from a request trace extracted by query_trace.py.
+"""Slide-sized figures drawn from a request trace extracted by query_trace.py.
 
 pipeline_figure: the first copies of a sample, one row per 32 B request of one
 pseudo-channel, from its arrival at the DRAM controller to the end of its
 burst on the data bus. A burst that started while the previous burst of the
 same pseudo-channel was still on its wires is drawn in red.
+
+bank_group_figure: the same bursts, one row per bank group plus one for the
+pseudo-channel's data bus. Bursts that shared the wires with another one are
+red in their bank group; on the bus, red is the time when two were on it.
 """
 
 import csv
@@ -98,6 +102,60 @@ def pipeline_figure(requests, output, title, copies=3, xlim=None):
         handles.append(patches.Patch(color=OVERLAP, label="Burst overlapping another burst"))
     ax.legend(handles=handles, loc="lower left", fontsize=FONT - 2)
     ax.set_xlim(*(xlim or time_range(rows)))
+    ax.set_xlabel("Time since the first burst (ns)", fontsize=FONT)
+    ax.set_title(title, fontsize=FONT + 2)
+    plot.save(fig, output)
+
+
+def bank_group_figure(requests, output, title, copies=3, xlim=None):
+    rows, _ = first_copies(requests, copies)
+    rows.sort(key=lambda r: r["burst_begin_ps"])
+    t0 = rows[0]["burst_begin_ps"]
+    groups = sorted({r["bank_group"] for r in rows})
+    # Top to bottom: bank groups in order, then the data bus after a gap.
+    y = {group: len(groups) - index + 1 for index, group in enumerate(groups)}
+    bus = 0
+    fig, ax = plt.subplots(figsize=(12, 5.2), layout="constrained")
+    ax.set_axisbelow(True)
+    ax.grid(axis="y", visible=False)
+    height = 0.6
+
+    def bar(row, begin, end, color):
+        ax.barh(row, end - begin, left=begin, height=height, color=color, edgecolor="white")
+
+    # Bursts that share the wires with another burst, and the shared time.
+    shared, intervals = set(), []
+    for previous, request in zip(rows, rows[1:]):
+        if request["burst_begin_ps"] < previous["burst_end_ps"]:
+            shared.update((id(previous), id(request)))
+            intervals.append((request["burst_begin_ps"], previous["burst_end_ps"]))
+    for request in rows:
+        begin = (request["burst_begin_ps"] - t0) / 1000
+        end = (request["burst_end_ps"] - t0) / 1000
+        bar(y[request["bank_group"]], begin, end, OVERLAP if id(request) in shared else BURST)
+        bar(bus, begin, end, BURST)
+    for begin, end in intervals:
+        ax.barh(bus, (end - begin) / 1000, left=(begin - t0) / 1000, height=height, color=OVERLAP)
+    ax.set_yticks(
+        [*y.values(), bus],
+        [*(f"bank group {group}" for group in groups), "data bus"],
+        fontsize=FONT,
+    )
+    ax.tick_params(axis="y", length=0)
+    ax.tick_params(axis="x", labelsize=FONT - 2)
+    ax.axhline(1, color="#bbbbbb", linewidth=1)
+    handles = [patches.Patch(color=BURST, label="Burst (1 ns)")]
+    if any(r.get("overlap") for r in rows):
+        handles.append(patches.Patch(color=OVERLAP, label="Two bursts on the same wires at once"))
+    ax.legend(
+        handles=handles,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.16),
+        ncol=len(handles),
+        fontsize=FONT - 2,
+    )
+    ax.set_xlim(*(xlim or (-0.5, (rows[-1]["burst_end_ps"] - t0) / 1000 + 0.5)))
+    ax.set_ylim(-0.6, len(groups) + 1.6)
     ax.set_xlabel("Time since the first burst (ns)", fontsize=FONT)
     ax.set_title(title, fontsize=FONT + 2)
     plot.save(fig, output)

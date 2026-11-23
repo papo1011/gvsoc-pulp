@@ -11,6 +11,7 @@
                               (needs the sequential sweep's bandwidth.csv)
   requests_512B_ccds{4,2}.png  the first copies of a 512 B sample, request by
                               request (needs trace_ccds4.csv / trace_ccds2.csv)
+  bank_groups_512B_ccds{4,2}.png  the same bursts, one row per bank group
 
 Figures whose inputs are missing are skipped.
 """
@@ -143,6 +144,12 @@ def main():
                 out / f"requests_512B_ccds{ccds}.png",
                 f"First three 512 B copies, pseudo-channel 0, tCCD_S = {ccds}",
                 xlim=xlim,
+            )
+            trace_figures.bank_group_figure(
+                trace,
+                out / f"bank_groups_512B_ccds{ccds}.png",
+                f"Same bursts by bank group, pseudo-channel 0, tCCD_S = {ccds}",
+                xlim=(-0.5, xlim[1]),
             )
 
 

@@ -301,6 +301,22 @@ same pseudo-channel is still on the wires. Every overlap is between two
 bank group are never less than 1 ns apart (`tCCD_L`). Bursts of the two pseudo-channels
 overlap in time normally, on separate wires, and are not marked.
 
+![The same bursts by bank group, CCDS = 4](assets/bank_groups_512B_ccds4.png)
+
+**What it shows.** The same bursts, one row per bank group, and at the bottom
+the data bus of the pseudo-channel, which all bank groups share.
+**What to take away.** The bank groups take turns: two bursts from bank group 4,
+two from 5, then 6, then 7, and again. The bus is one continuous row, one burst
+at a time.
+
+![The same bursts by bank group, CCDS = 2](assets/bank_groups_512B_ccds2.png)
+
+**What to take away.** The red bursts start while a burst of *another* bank
+group is still on the bus. Between 5.5 and 8 ns, bank groups 4 and 7 alternate
+every half nanosecond, and the bus row shows two bursts on the same wires for
+2.5 ns in a row. That is the 0.5 ns `tCCD_S` letting a 1 ns burst start before
+the previous one ends.
+
 ### Why the `CCDS = 2` curve settles at 64.25 GB/s
 
 The requests reach the DRAM at the same times in both runs: their rate is set by
@@ -335,8 +351,8 @@ pulp/.venv/bin/python "$APP_DIR/plot.py"
 `time_breakdown.png` (from `dram.csv`); `ccds.png` (from `bandwidth_ccds2.csv`)
 and `ccds_bus.png` (from `dram_ccds2.csv`); `sequential_vs_pipelined.png`
 (with the sequential app's `assets/bandwidth.csv`;
-`--sequential DIR` points elsewhere); and `requests_512B_ccds4.png` and
-`requests_512B_ccds2.png` (from `trace_ccds4.csv` and `trace_ccds2.csv`). For a new run,
+`--sequential DIR` points elsewhere); and `requests_512B_ccds*.png` and
+`bank_groups_512B_ccds*.png` (from `trace_ccds4.csv` and `trace_ccds2.csv`). For a new run,
 `plot.py "$RUN_DIR"` reads `bandwidth.csv` and `dram.csv` there and writes the
 figures next to them (`--output-dir` changes this); figures whose CSVs are
 missing are skipped. All DRAM sweep figures share
