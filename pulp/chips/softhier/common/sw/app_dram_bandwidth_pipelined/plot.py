@@ -8,8 +8,7 @@
   ccds.png                    end to end, tCCD_S = 2 vs 4 (needs bandwidth_ccds2.csv)
   ccds_bus.png                DRAM data bus, tCCD_S = 2 vs 4 (dram.csv, dram_ccds2.csv)
   sequential_vs_pipelined.png  one vs eight copies in flight
-  pipelined_speedup.png       pipelined / sequential bandwidth
-                              (both need the sequential sweep's bandwidth.csv)
+                              (needs the sequential sweep's bandwidth.csv)
 
 Figures whose inputs are missing are skipped.
 """
@@ -111,22 +110,18 @@ def main():
             value="bus_GB_per_s",
         )
     if (args.sequential / "bandwidth.csv").exists():
-        sequential = plot.load_curve(args.sequential / "bandwidth.csv")
         plot.comparison_figure(
             [
-                ("Sequential (one copy in flight)", sequential, plot.SEQUENTIAL, "o"),
+                (
+                    "Sequential (one copy in flight)",
+                    plot.load_curve(args.sequential / "bandwidth.csv"),
+                    plot.SEQUENTIAL,
+                    "o",
+                ),
                 ("Pipelined (eight copies in flight)", curve, plot.PIPELINED, "s"),
             ],
             out / "sequential_vs_pipelined.png",
             f"One vs eight copies in flight ({CONFIGURATION})",
-        )
-        plot.ratio_figure(
-            sequential,
-            curve,
-            out / "pipelined_speedup.png",
-            f"Pipelined over sequential bandwidth ({CONFIGURATION})",
-            "Pipelined / sequential bandwidth",
-            plot.PIPELINED,
         )
 
 

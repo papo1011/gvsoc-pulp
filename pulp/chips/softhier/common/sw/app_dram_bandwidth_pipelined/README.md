@@ -159,16 +159,9 @@ waits once.
 
 **What to take away.** Both reach the same 64 GB/s ceiling, but the pipelined
 curve gets there much earlier. The difference is not bandwidth, it is how
-much waiting the cluster does.
-
-![Pipelined over sequential bandwidth](assets/pipelined_speedup.png)
-
-**What it shows.** How many times faster the pipelined sweep is, size by size
-(1.0 means the same speed).
-
-**What to take away.** Small blocks gain the most: 3.4–3.6× up to 512 B,
-1.6× at 4 KiB. From 64 KiB up the gain is below 4%, because a single large
-copy already keeps the DRAM busy on its own.
+much waiting the cluster does. Small blocks gain the most: 3.4–3.6× up to
+512 B, 1.6× at 4 KiB. From 64 KiB up the gain is below 4%, because a single
+large copy already keeps the DRAM busy on its own.
 
 | Block | Sequential | Pipelined | Pipelined / sequential |
 | ---: | ---: | ---: | ---: |
@@ -302,7 +295,7 @@ pulp/.venv/bin/python "$APP_DIR/plot.py"
 `bandwidth.png`; `dram_vs_end_to_end.png`, `fixed_cost.png` and
 `time_breakdown.png` (from `dram.csv`); `ccds.png` (from `bandwidth_ccds2.csv`)
 and `ccds_bus.png` (from `dram_ccds2.csv`); and `sequential_vs_pipelined.png`
-and `pipelined_speedup.png` (with the sequential app's `assets/bandwidth.csv`;
+(with the sequential app's `assets/bandwidth.csv`;
 `--sequential DIR` points elsewhere). For a new run,
 `plot.py "$RUN_DIR"` reads `bandwidth.csv` and `dram.csv` there and writes the
 figures next to them (`--output-dir` changes this); figures whose CSVs are

@@ -327,27 +327,6 @@ def bus_rows(samples):
     ]
 
 
-def ratio_figure(reference, curve, output, title, ylabel, color):
-    """Bandwidth of `curve` divided by that of `reference`, per size."""
-    base = {row["bytes"]: row["median_GB_per_s"] for row in reference}
-    points = [row for row in curve if row["bytes"] in base]
-    ratios = [row["median_GB_per_s"] / base[row["bytes"]] for row in points]
-    fig, ax = plt.subplots(figsize=(10, 5.2), layout="constrained")
-    ax.plot([row["bytes"] for row in points], ratios, marker="s", color=color)
-    ax.axhline(1, color=REFERENCE, linewidth=1)
-    for row, ratio in zip(points, ratios):
-        if row["bytes"] in (256, 4096, 65536):
-            label_point(
-                ax, row["bytes"], ratio, f"{size_label(row['bytes'])}: {ratio:.2f}×", below=False
-            )
-    size_axis(ax)
-    ax.set_ylim(0, max(ratios) * 1.12)
-    ax.set_xlabel("Block size")
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
-    save(fig, output)
-
-
 def breakdown_figure(samples, output, title):
     """Where the time of one sample goes, as shares of the end-to-end interval."""
     fig, ax = plt.subplots(figsize=(10, 5.6), layout="constrained")
