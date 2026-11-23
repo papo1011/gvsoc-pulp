@@ -163,7 +163,11 @@ def bus_timeline_figure(requests, output, title, xlim=None):
                 fontsize=9,
                 color=plot.INK,
             )
-    legend.append(patches.Patch(color=OVERLAP, alpha=0.3, label="Two bursts on the bus at once"))
+    legend.append(
+        patches.Patch(
+            color=OVERLAP, alpha=0.3, label="Two bursts on one pseudo-channel's bus at once"
+        )
+    )
     legend.append(
         plt.Line2D(
             [], [], color=plot.INK, marker="v", markersize=4, linestyle="", label="Row opened (ACT)"

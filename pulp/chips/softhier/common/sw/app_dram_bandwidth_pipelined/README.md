@@ -308,14 +308,20 @@ controller, when its row was opened, when its read command left, when its burst
 was on the data bus, and which bank group and bank it used
 ([trace_ccds4.csv](assets/trace_ccds4.csv), [trace_ccds2.csv](assets/trace_ccds2.csv)).
 
-Two consecutive bursts on a pseudo-channel are spaced by one of two rules:
+Each pseudo-channel has its own data wires (32 bits, 32 GB/s), shared by all
+its bank groups: a burst holds them for 1 ns. Bursts on the two pseudo-channels
+run side by side, which is how the channel reaches 64 GB/s; two bursts on the
+*same* pseudo-channel at once are physically impossible. Two consecutive bursts
+on a pseudo-channel are spaced by one of two rules:
 
 - **L**, same bank group: the next burst waits `tCCD_L` = 4 cycles = 1 ns,
   exactly the length of a burst. It can never overlap.
 - **S**, different bank group: it waits `tCCD_S` = `CCDS` cycles. That is 1 ns
   with `CCDS = 4`, but only **0.5 ns with `CCDS = 2`**: half a burst.
 
-So only an S can put two bursts on the bus at once.
+So only an S can put two bursts on the same pseudo-channel at once. A real
+device needs `tCCD_S` at least as long as a burst; DRAMSys's HBM2 checker does
+not enforce it (see above).
 
 ![Every burst of a 512 B sample, CCDS = 4](assets/bursts_512B_ccds4.png)
 
@@ -333,8 +339,9 @@ groups 4–7, so the rules alternate L, S, L, S, and every spacing is exactly
 ![Every burst of a 512 B sample, CCDS = 2](assets/bursts_512B_ccds2.png)
 
 **What it shows.** The same sample with `CCDS = 2`. A burst that started while
-another one was still on the bus is drawn on a second row, and the red band is
-the time when two bursts used the bus at once. A red **S** is an overlapping
+another burst of the same pseudo-channel was still on its wires is drawn on a
+second row, and the red band is the time when the two shared them. Bursts of
+different pseudo-channels overlapping in time are normal and not marked. A red **S** is an overlapping
 spacing (0.5 or 0.75 ns).
 
 **What to take away.** Every overlap is an S, between two different bank
