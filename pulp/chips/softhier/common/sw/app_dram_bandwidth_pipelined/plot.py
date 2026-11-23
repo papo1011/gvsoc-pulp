@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Draw the pipelined sweep's figures from the CSVs in a directory.
+"""Draw the pipelined sweep's figures, one chart per image, from the CSVs in a directory.
 
-  bandwidth.png              end-to-end bandwidth
-  dram_vs_end_to_end.png     DRAM data-bus vs end-to-end bandwidth (needs dram.csv)
-  ccds.png                   tCCD_S = 2 against tCCD_S = 4 (needs bandwidth_ccds2.csv)
-  streaming_vs_pipelined.png one against eight copies in flight
-  time_breakdown.png         where the time of a sample goes, both sweeps
-                             (both need the streaming sweep's CSVs)
+  bandwidth.png               end-to-end bandwidth
+  dram_vs_end_to_end.png      DRAM data-bus vs end-to-end bandwidth (needs dram.csv)
+  fixed_cost.png              time of a sample outside the DRAM bus window (dram.csv)
+  time_breakdown.png          where the time of a sample goes (dram.csv)
+  ccds.png                    end to end, tCCD_S = 2 vs 4 (needs bandwidth_ccds2.csv)
+  ccds_bus.png                DRAM data bus, tCCD_S = 2 vs 4 (dram.csv, dram_ccds2.csv)
+  streaming_vs_pipelined.png  one vs eight copies in flight
+  pipelined_speedup.png       pipelined / streaming bandwidth
+                              (both need the streaming sweep's bandwidth.csv)
 
 Figures whose inputs are missing are skipped.
 """
@@ -20,6 +23,7 @@ from dram_common import plot_sweep as plot
 
 HERE = Path(__file__).resolve().parent
 LABEL = "pipelined (eight copies in flight)"
+CONFIGURATION = "asynchronous router, tCCD_S = 4"
 
 
 def main():
@@ -40,7 +44,7 @@ def main():
         "--streaming",
         type=Path,
         default=HERE.parent / "app_dram_bandwidth_streaming/assets",
-        help="directory with the streaming sweep's bandwidth.csv and dram.csv",
+        help="directory with the streaming sweep's bandwidth.csv",
     )
     args = parser.parse_args()
     data, out = args.directory, args.output_dir or args.directory
@@ -48,7 +52,7 @@ def main():
     onset = plot.bandwidth_figure(
         curve,
         out / "bandwidth.png",
-        "Single cluster, local HBM: pipelined DMA reads (tCCD_S = 4)",
+        f"Single cluster, local HBM: pipelined DMA reads ({CONFIGURATION})",
         plot.PIPELINED,
         f"End to end, {LABEL}, median and min-max of 3",
     )
@@ -60,25 +64,48 @@ def main():
             curve,
             samples,
             out / "dram_vs_end_to_end.png",
-            "Pipelined reads: DRAM data bus vs end to end (tCCD_S = 4)",
+            f"Pipelined reads: DRAM data bus vs end to end ({CONFIGURATION})",
             plot.PIPELINED,
             LABEL,
+        )
+        plot.fixed_cost_figure(
+            samples,
+            out / "fixed_cost.png",
+            f"Pipelined reads: time outside the DRAM bus window ({CONFIGURATION})",
+        )
+        plot.breakdown_figure(
+            samples,
+            out / "time_breakdown.png",
+            f"Pipelined reads: where the time of a sample goes ({CONFIGURATION})",
         )
     if (data / "bandwidth_ccds2.csv").exists():
         plot.comparison_figure(
             [
-                ("tCCD_S = 4 (final)", curve, plot.PIPELINED, "o"),
+                ("End to end, tCCD_S = 4 (final)", curve, plot.PIPELINED, "o"),
                 (
-                    "tCCD_S = 2 (shared DRAMSys configuration)",
+                    "End to end, tCCD_S = 2 (shared DRAMSys configuration)",
                     plot.load_curve(data / "bandwidth_ccds2.csv"),
                     plot.OLDER[0],
                     "s",
                 ),
             ],
             out / "ccds.png",
-            "Pipelined reads, asynchronous router: tCCD_S = 2 vs 4",
-            relative="percent",
-            relative_label="tCCD_S = 2 faster\nthan tCCD_S = 4 (%)",
+            "Pipelined reads, asynchronous router: tCCD_S = 2 vs 4, end to end",
+        )
+    if samples and (data / "dram_ccds2.csv").exists():
+        plot.comparison_figure(
+            [
+                ("DRAM data bus, tCCD_S = 4 (final)", plot.bus_rows(samples), plot.DRAM, "o"),
+                (
+                    "DRAM data bus, tCCD_S = 2 (shared DRAMSys configuration)",
+                    plot.bus_rows(plot.load_samples(data / "dram_ccds2.csv")),
+                    plot.OLDER[0],
+                    "s",
+                ),
+            ],
+            out / "ccds_bus.png",
+            "Pipelined reads, asynchronous router: tCCD_S = 2 vs 4, DRAM data bus",
+            value="bus_GB_per_s",
         )
     if (args.streaming / "bandwidth.csv").exists():
         streaming = plot.load_curve(args.streaming / "bandwidth.csv")
@@ -88,18 +115,15 @@ def main():
                 ("Pipelined (eight copies in flight)", curve, plot.PIPELINED, "s"),
             ],
             out / "streaming_vs_pipelined.png",
-            "One vs eight copies in flight, asynchronous router, tCCD_S = 4",
-            relative="ratio",
-            relative_label="Pipelined / streaming",
+            f"One vs eight copies in flight ({CONFIGURATION})",
         )
-    if samples and (args.streaming / "dram.csv").exists():
-        plot.breakdown_figure(
-            [
-                ("Streaming (one copy in flight)", plot.load_samples(args.streaming / "dram.csv")),
-                ("Pipelined (eight copies in flight)", samples),
-            ],
-            out / "time_breakdown.png",
-            "Where the time of a sample goes (median sample per size, tCCD_S = 4)",
+        plot.ratio_figure(
+            streaming,
+            curve,
+            out / "pipelined_speedup.png",
+            f"Pipelined over streaming bandwidth ({CONFIGURATION})",
+            "Pipelined / streaming bandwidth",
+            plot.PIPELINED,
         )
 
 

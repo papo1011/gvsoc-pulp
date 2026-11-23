@@ -87,8 +87,10 @@ least 95% of the maximum. The 64 B–512 KiB medians are identical to the earlie
 
 ![Streaming vs pipelined reads](assets/streaming_vs_pipelined.png)
 
-Both sweeps use the same simulator configuration and the same block sizes; the
-bottom panel is the pipelined bandwidth divided by the streaming one.
+Both sweeps use the same simulator configuration and the same block sizes.
+Divided by each other:
+
+![Pipelined over streaming bandwidth](assets/pipelined_speedup.png)
 
 | Block | Streaming | Pipelined | Pipelined / streaming |
 | ---: | ---: | ---: | ---: |
@@ -127,14 +129,18 @@ The two curves measure the same samples at two places:
   back. Below 32 B every copy still reads a whole 32 B burst; with 4 B blocks
   the eight copies read the same burst eight times.
 
-The bottom panel is the difference between the two intervals: the time before
-the first burst and after the last one.
+![Time outside the DRAM bus window](assets/fixed_cost.png)
+
+The difference between the two intervals: the time before the first burst and
+after the last one, per sample.
 
 ![Where the time of a sample goes](assets/time_breakdown.png)
 
-The breakdown splits each sample (the median one per size) into bus busy time,
-bus idle time between the first and last burst, and the time outside that
-window, for both sweeps. Take-home points:
+Each sample (the median one per size) split into bus busy time, bus idle time
+between the first and last burst, and the time outside that window. The
+streaming sweep's breakdown is in its
+[guide](../app_dram_bandwidth_streaming/README.md#dram-bus-vs-end-to-end-bandwidth).
+Take-home points:
 
 - **The DRAM is saturated from 1 KiB blocks on.** With eight copies queued the
   bus carries 63.4 GB/s at 1 KiB, 63.7 GB/s at 4 KiB and 64.00 GB/s at 1 MiB,
@@ -161,11 +167,14 @@ window, for both sweeps. Take-home points:
 
 ## Why `CCDS = 2` exceeded 64 GB/s
 
-![tCCD_S = 2 vs 4](assets/ccds.png)
+![tCCD_S = 2 vs 4, end to end](assets/ccds.png)
 
 64 GB/s is the nominal bus bandwidth of the configured channel: two
 pseudo-channels of 32 bits at 8 Gbit/s per pin. The same sweep with the shared
-DRAMSys configuration (`CCDS = 2`) went above it:
+DRAMSys configuration (`CCDS = 2`) went above it, end to end and on the DRAM
+data bus:
+
+![tCCD_S = 2 vs 4, DRAM data bus](assets/ccds_bus.png)
 
 | | `CCDS = 2` (shared configuration) | `CCDS = 4` |
 | --- | ---: | ---: |
@@ -177,8 +186,9 @@ DRAMSys configuration (`CCDS = 2`) went above it:
 | Bus occupancy per pseudo-channel, 1 KiB | **102.6–103.4%** | 99.0% |
 
 An occupancy above 100% means two bursts used the same data bus at the same
-time, which is impossible in hardware. The bottom panel of the figure is how
-much faster `CCDS = 2` is: nothing up to 64 B, 0–3.9% from 128 B to 512 B
+time, which is impossible in hardware: with `CCDS = 2` the bus reaches
+67.4 GB/s at 512 B. End to end, `CCDS = 2` is faster by nothing up to 64 B,
+0–3.9% from 128 B to 512 B
 (a few 1 ns ticks in samples under 110 ns), 1.1–2.4% at 1–4 KiB, and a
 constant 0.4% from 128 KiB up. In the earlier 64 B–512 KiB run,
 5355 of the 65536 bursts of a 512 KiB sample (8%) started 0.5 ns after the
@@ -207,11 +217,12 @@ APP_DIR="$PWD/pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_pipelined"
 pulp/.venv/bin/python "$APP_DIR/plot.py"
 ```
 
-`plot.py` reads the CSVs in `assets/` and redraws `bandwidth.png`,
-`dram_vs_end_to_end.png` (from `dram.csv`), `ccds.png` (from
-`bandwidth_ccds2.csv`; `dram_ccds2.csv` holds that run's DRAM traffic), and `streaming_vs_pipelined.png` and
-`time_breakdown.png` (with the streaming app's `assets/bandwidth.csv` and
-`dram.csv`; `--streaming DIR` points elsewhere). For a new run,
+`plot.py` reads the CSVs in `assets/` and redraws, one chart per image,
+`bandwidth.png`; `dram_vs_end_to_end.png`, `fixed_cost.png` and
+`time_breakdown.png` (from `dram.csv`); `ccds.png` (from `bandwidth_ccds2.csv`)
+and `ccds_bus.png` (from `dram_ccds2.csv`); and `streaming_vs_pipelined.png`
+and `pipelined_speedup.png` (with the streaming app's `assets/bandwidth.csv`;
+`--streaming DIR` points elsewhere). For a new run,
 `plot.py "$RUN_DIR"` reads `bandwidth.csv` and `dram.csv` there and writes the
 figures next to them (`--output-dir` changes this); figures whose CSVs are
 missing are skipped. All DRAM sweep figures share

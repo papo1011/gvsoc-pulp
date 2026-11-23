@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Draw the streaming sweep's figures from the CSVs in a directory.
+"""Draw the streaming sweep's figures, one chart per image, from the CSVs in a directory.
 
   bandwidth.png           end-to-end bandwidth, fitted latency-bandwidth model
   dram_vs_end_to_end.png  DRAM data-bus vs end-to-end bandwidth (needs dram.csv)
+  fixed_cost.png          time of a sample outside the DRAM bus window (dram.csv)
+  time_breakdown.png      where the time of a sample goes (dram.csv)
   simulator_fixes.png     the same sweep before and after each simulator fix
                           (needs bandwidth_sync_router_ccds2.csv and
                           bandwidth_ccds2.csv)
@@ -18,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from dram_common import plot_sweep as plot
 
 LABEL = "streaming (one copy in flight)"
+CONFIGURATION = "asynchronous router, tCCD_S = 4"
 
 
 def main():
@@ -40,7 +43,7 @@ def main():
     plot.bandwidth_figure(
         curve,
         out / "bandwidth.png",
-        "Single cluster, local HBM: streaming DMA reads (tCCD_S = 4)",
+        f"Single cluster, local HBM: streaming DMA reads ({CONFIGURATION})",
         plot.STREAMING,
         f"End to end, {LABEL}, median and min-max of 3",
         with_fit=True,
@@ -48,13 +51,24 @@ def main():
     alpha, limit = plot.fit(curve)
     print(f"Fit on 64-256 KiB: alpha = {alpha:.3f} ns, B = {limit:.6f} GB/s")
     if (data / "dram.csv").exists():
+        samples = plot.load_samples(data / "dram.csv")
         plot.dram_figure(
             curve,
-            plot.load_samples(data / "dram.csv"),
+            samples,
             out / "dram_vs_end_to_end.png",
-            "Streaming reads: DRAM data bus vs end to end (tCCD_S = 4)",
+            f"Streaming reads: DRAM data bus vs end to end ({CONFIGURATION})",
             plot.STREAMING,
             LABEL,
+        )
+        plot.fixed_cost_figure(
+            samples,
+            out / "fixed_cost.png",
+            f"Streaming reads: time outside the DRAM bus window ({CONFIGURATION})",
+        )
+        plot.breakdown_figure(
+            samples,
+            out / "time_breakdown.png",
+            f"Streaming reads: where the time of a sample goes ({CONFIGURATION})",
         )
     older = [data / "bandwidth_sync_router_ccds2.csv", data / "bandwidth_ccds2.csv"]
     if all(path.exists() for path in older):
@@ -66,8 +80,6 @@ def main():
             ],
             out / "simulator_fixes.png",
             "Streaming reads before and after each simulator fix",
-            relative="percent",
-            relative_label="Difference from final (%)",
         )
 
 

@@ -232,152 +232,148 @@ def bandwidth_figure(curve, output, title, color, label, with_fit=False):
     return onset
 
 
-def dram_figure(curve, samples, output, title, color, label):
-    """DRAM data-bus bandwidth against end-to-end bandwidth, and the time between them."""
-    fig, (top, bottom) = plt.subplots(
-        2,
-        1,
-        figsize=(10, 7.2),
-        layout="constrained",
-        sharex=True,
-        gridspec_kw={"height_ratios": (3, 2)},
-    )
+def dram_figure(curve, samples, output, title, color, label, bus_label=None):
+    """DRAM data-bus bandwidth against end-to-end bandwidth of the same samples."""
+    fig, ax = plt.subplots(figsize=(10, 5.2), layout="constrained")
     sizes = list(samples)
     bus = [median(sample["bus_GB_per_s"] for sample in samples[size]) for size in sizes]
     end_to_end = {row["bytes"]: row["median_GB_per_s"] for row in curve}
-    top.plot(
+    ax.plot(
         sizes,
         bus,
         marker="s",
         color=DRAM,
-        label="DRAM data bus: bytes / (first burst start → last burst end)",
+        label=bus_label or "DRAM data bus: bytes / (first burst start → last burst end)",
     )
-    top.plot(
+    ax.plot(
         sizes,
         [end_to_end[size] for size in sizes],
         marker="o",
         color=color,
         label=f"End to end: {label}",
     )
-    peak_line(top)
+    peak_line(ax)
     for size in (4096, sizes[-1]):
         index = sizes.index(size)
-        label_point(top, size, bus[index], f"{bus[index]:.2f}", below=False, left=True)
-        label_point(top, size, end_to_end[size], f"{end_to_end[size]:.2f}", left=size == sizes[-1])
-    size_axis(top, label=False)
-    bandwidth_axis(top)
-    top.set_title(title)
-    legend(top)
-
-    outside = [median(sample["outside_ns"] for sample in samples[size]) for size in sizes]
-    bottom.plot(sizes, outside, marker="o", color=OUTSIDE)
-    large = [value for size, value in zip(sizes, outside) if size >= 4096]
-    bottom.axhline(
-        median(large),
-        color=OUTSIDE,
-        linestyle=":",
-        linewidth=1.2,
-        label=f"Median from 4 KiB: {median(large):.1f} ns",
-    )
-    size_axis(bottom)
-    bottom.set_ylim(0, max(80, max(outside) * 1.15))
-    bottom.set_xlabel("Block size")
-    bottom.set_ylabel("End-to-end time minus\nDRAM bus window (ns)")
-    bottom.legend(loc="lower right")
+        label_point(ax, size, bus[index], f"{bus[index]:.2f}", below=False, left=True)
+        label_point(ax, size, end_to_end[size], f"{end_to_end[size]:.2f}", left=size == sizes[-1])
+    size_axis(ax)
+    bandwidth_axis(ax)
+    ax.set_xlabel("Block size")
+    ax.set_title(title)
+    legend(ax)
     save(fig, output)
 
 
-def comparison_figure(series, output, title, relative=None, relative_label=None):
-    """End-to-end bandwidth of several sweeps on one axis.
-
-    series: (label, curve, color, marker) tuples; the first is the reference.
-    relative: None, "percent" (difference from the reference) or "ratio"
-    (series / reference), drawn in a second panel for the other series and
-    labelled relative_label.
-    """
-    rows = 2 if relative else 1
-    fig, axes = plt.subplots(
-        rows,
-        1,
-        figsize=(10, 7.2 if relative else 5.2),
-        layout="constrained",
-        sharex=True,
-        squeeze=False,
-        gridspec_kw={"height_ratios": (3, 2)[:rows]},
+def fixed_cost_figure(samples, output, title):
+    """Time of each sample outside the DRAM bus window: end-to-end interval minus window."""
+    fig, ax = plt.subplots(figsize=(10, 5.2), layout="constrained")
+    sizes = list(samples)
+    outside = [median(sample["outside_ns"] for sample in samples[size]) for size in sizes]
+    ax.plot(
+        sizes,
+        outside,
+        marker="o",
+        color=OUTSIDE,
+        label="Before the first burst and after the last, median of 3",
     )
-    top = axes[0][0]
-    for label, curve, color, marker in series:
-        top.plot(
-            [row["bytes"] for row in curve],
-            [row["median_GB_per_s"] for row in curve],
+    large = median(value for size, value in zip(sizes, outside) if size >= 4096)
+    ax.axhline(
+        large,
+        color=OUTSIDE,
+        linestyle=":",
+        linewidth=1.2,
+        label=f"Median from 4 KiB: {large:.1f} ns",
+    )
+    size_axis(ax)
+    ax.set_ylim(0, max(80, max(outside) * 1.15))
+    ax.set_xlabel("Block size")
+    ax.set_ylabel("End-to-end time minus DRAM bus window (ns)")
+    ax.set_title(title)
+    ax.legend(loc="lower right")
+    save(fig, output)
+
+
+def comparison_figure(series, output, title, value="median_GB_per_s"):
+    """Bandwidth of several sweeps on one axis.
+
+    series: (label, rows, color, marker) tuples, rows with "bytes" and `value`.
+    """
+    fig, ax = plt.subplots(figsize=(10, 5.2), layout="constrained")
+    for label, rows, color, marker in series:
+        ax.plot(
+            [row["bytes"] for row in rows],
+            [row[value] for row in rows],
             marker=marker,
             color=color,
             label=label,
         )
-    peak_line(top)
-    size_axis(top, label=not relative)
-    bandwidth_axis(top)
-    top.set_title(title)
-    legend(top)
-    if not relative:
-        top.set_xlabel("Block size")
-        save(fig, output)
-        return
-    bottom = axes[1][0]
-    reference = series[0][1]
-    base = {row["bytes"]: row["median_GB_per_s"] for row in reference}
-    for label, curve, color, marker in series[1:]:
-        points = [row for row in curve if row["bytes"] in base]
-        values = [
-            row["median_GB_per_s"] / base[row["bytes"]]
-            if relative == "ratio"
-            else 100 * (row["median_GB_per_s"] / base[row["bytes"]] - 1)
-            for row in points
-        ]
-        bottom.plot([row["bytes"] for row in points], values, marker=marker, color=color)
-    bottom.axhline(1 if relative == "ratio" else 0, color=REFERENCE, linewidth=1)
-    size_axis(bottom)
-    bottom.set_xlabel("Block size")
-    bottom.set_ylabel(relative_label)
+    peak_line(ax)
+    size_axis(ax)
+    bandwidth_axis(ax)
+    ax.set_xlabel("Block size")
+    ax.set_title(title)
+    legend(ax)
     save(fig, output)
 
 
-def breakdown_figure(panels, output, title):
-    """Where the time of one sample goes, as shares of the end-to-end interval.
+def bus_rows(samples):
+    """Median DRAM bus bandwidth per size, shaped like curve rows."""
+    return [
+        {"bytes": size, "bus_GB_per_s": median(s["bus_GB_per_s"] for s in group)}
+        for size, group in samples.items()
+    ]
 
-    panels: (title, samples) pairs, drawn side by side.
-    """
-    fig, axes = plt.subplots(
-        1, len(panels), figsize=(12, 5), layout="constrained", sharey=True, squeeze=False
+
+def ratio_figure(reference, curve, output, title, ylabel, color):
+    """Bandwidth of `curve` divided by that of `reference`, per size."""
+    base = {row["bytes"]: row["median_GB_per_s"] for row in reference}
+    points = [row for row in curve if row["bytes"] in base]
+    ratios = [row["median_GB_per_s"] / base[row["bytes"]] for row in points]
+    fig, ax = plt.subplots(figsize=(10, 5.2), layout="constrained")
+    ax.plot([row["bytes"] for row in points], ratios, marker="s", color=color)
+    ax.axhline(1, color=REFERENCE, linewidth=1)
+    for row, ratio in zip(points, ratios):
+        if row["bytes"] in (256, 4096, 65536):
+            label_point(
+                ax, row["bytes"], ratio, f"{size_label(row['bytes'])}: {ratio:.2f}×", below=False
+            )
+    size_axis(ax)
+    ax.set_ylim(0, max(ratios) * 1.12)
+    ax.set_xlabel("Block size")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    save(fig, output)
+
+
+def breakdown_figure(samples, output, title):
+    """Where the time of one sample goes, as shares of the end-to-end interval."""
+    fig, ax = plt.subplots(figsize=(10, 5.6), layout="constrained")
+    sizes = list(samples)
+    chosen = [representative(samples[size]) for size in sizes]
+    shares = {
+        key: [100 * sample[key] / sample["end_to_end_ns"] for sample in chosen]
+        for key in ("busy_ns", "idle_ns", "outside_ns")
+    }
+    ax.stackplot(
+        sizes,
+        shares["busy_ns"],
+        shares["idle_ns"],
+        shares["outside_ns"],
+        colors=(DRAM, IDLE, OUTSIDE),
+        edgecolor="white",
+        linewidth=0.6,
+        labels=(
+            "DRAM bus transferring data",
+            "DRAM bus idle between the first and last burst",
+            "Before the first burst and after the last (on-chip path)",
+        ),
     )
-    for ax, (panel_title, samples) in zip(axes[0], panels):
-        sizes = list(samples)
-        chosen = [representative(samples[size]) for size in sizes]
-        shares = {
-            key: [100 * sample[key] / sample["end_to_end_ns"] for sample in chosen]
-            for key in ("busy_ns", "idle_ns", "outside_ns")
-        }
-        ax.stackplot(
-            sizes,
-            shares["busy_ns"],
-            shares["idle_ns"],
-            shares["outside_ns"],
-            colors=(DRAM, IDLE, OUTSIDE),
-            edgecolor="white",
-            linewidth=0.6,
-            labels=(
-                "DRAM bus transferring data",
-                "DRAM bus idle between the first and last burst",
-                "Before the first burst and after the last (on-chip path)",
-            ),
-        )
-        size_axis(ax)
-        ax.set_ylim(0, 100)
-        ax.set_title(panel_title)
-        ax.set_xlabel("Block size")
-        ax.grid(False)
-    axes[0][0].set_ylabel("Share of the end-to-end time (%)")
-    handles, labels = axes[0][0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="outside lower center", ncols=3)
-    fig.suptitle(title)
+    size_axis(ax)
+    ax.set_ylim(0, 100)
+    ax.set_xlabel("Block size")
+    ax.set_ylabel("Share of the end-to-end time (%)")
+    ax.set_title(title)
+    ax.grid(False)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.13), ncols=2, frameon=False)
     save(fig, output)

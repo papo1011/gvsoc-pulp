@@ -137,13 +137,16 @@ The two curves measure the same samples at two places:
   back. Below 32 B the DRAM still reads one 32 B burst per copy, so it moves
   more bytes than the payload.
 
-The bottom panel is the difference between the two intervals: the time spent
-before the first burst and after the last one.
+![Time outside the DRAM bus window](assets/fixed_cost.png)
 
-![Where the time of a sample goes](../app_dram_bandwidth_pipelined/assets/time_breakdown.png)
+The difference between the two intervals: the time spent before the first
+burst and after the last one, per sample.
 
-The breakdown splits each sample into bus busy time, bus idle time between the
-first and last burst, and the time outside that window. Take-home points:
+![Where the time of a sample goes](assets/time_breakdown.png)
+
+Each sample (the median one per size) split into bus busy time, bus idle time
+between the first and last burst, and the time outside that window. Take-home
+points:
 
 - **The DRAM saturates, and end to end follows it.** At 1 MiB the bus carries
   63.81 GB/s and is busy 99.7% of its window; end to end reaches 63.79 GB/s.
@@ -213,8 +216,8 @@ synchronous router and stay at 0 with the asynchronous one.
 
 ![Streaming reads before and after each simulator fix](assets/simulator_fixes.png)
 
-The same sweep in the three simulator configurations; the bottom panel is the
-difference from the final one. The synchronous router is 3.9% slower at
+The same sweep in the three simulator configurations. Compared with the final
+one, the synchronous router is 3.9% slower at
 16 KiB and 9.4% slower at 1 MiB: it adds 7 ns to every 4 KiB burst, so the loss
 grows with the number of bursts per copy. `CCDS = 2` is 0.5–3.2% faster from
 8 KiB up and 7.4–7.7% faster at 2–4 KiB, because its overlapping bursts shorten
@@ -230,8 +233,9 @@ APP_DIR="$PWD/pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_streaming"
 pulp/.venv/bin/python "$APP_DIR/plot.py"
 ```
 
-`plot.py` reads the CSVs in `assets/` and redraws `bandwidth.png`,
-`dram_vs_end_to_end.png` (from `dram.csv`) and `simulator_fixes.png` (from
+`plot.py` reads the CSVs in `assets/` and redraws, one chart per image,
+`bandwidth.png`, `dram_vs_end_to_end.png`, `fixed_cost.png` and
+`time_breakdown.png` (from `dram.csv`), and `simulator_fixes.png` (from
 `bandwidth_ccds2.csv` and `bandwidth_sync_router_ccds2.csv`, the 2026-11-20 and
 earlier runs). For a new run, `plot.py "$RUN_DIR"` reads `bandwidth.csv` and
 `dram.csv` there and writes the figures next to them (`--output-dir` changes
