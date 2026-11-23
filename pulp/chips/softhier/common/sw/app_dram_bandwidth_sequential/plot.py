@@ -49,7 +49,7 @@ def main():
         with_fit=True,
     )
     alpha, limit = plot.fit(curve)
-    print(f"Fit on 64-256 KiB: alpha = {alpha:.3f} ns, B = {limit:.6f} GB/s")
+    print(f"Fit on 64-256 KiB: alpha = {alpha:.3f} ns per copy, B = {limit:.6f} GB/s")
     if (data / "dram.csv").exists():
         samples = plot.load_samples(data / "dram.csv")
         plot.dram_figure(

@@ -56,6 +56,8 @@ plt.rcParams.update(
         "lines.linewidth": 2,
         "lines.markersize": 5,
         "savefig.facecolor": "white",
+        # Same input, same SVG: fixed element ids and no timestamp.
+        "svg.hashsalt": "dram-sweep",
     }
 )
 
@@ -176,7 +178,7 @@ def save(fig, output):
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=200)
-    fig.savefig(output.with_suffix(".svg"))
+    fig.savefig(output.with_suffix(".svg"), metadata={"Date": None})
     plt.close(fig)
     print(output)
 
@@ -206,7 +208,7 @@ def bandwidth_figure(curve, output, title, color, label, with_fit=False):
             color=INK,
             linestyle=":",
             linewidth=1.4,
-            label=f"Fit N / (α + N/B): α = {alpha:.1f} ns, B = {limit:.2f} GB/s",
+            label=f"Model N / (α + N/B): α = {alpha:.1f} ns per copy, B = {limit:.2f} GB/s",
         )
     ax.fill_between(
         x,

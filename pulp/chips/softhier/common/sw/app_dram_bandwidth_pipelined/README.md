@@ -77,11 +77,14 @@ and [assets/dram.csv](assets/dram.csv).
 **What it shows.** The bandwidth the cluster gets for each block size, measured
 by the core from the first DMA request to the end of the last copy. The dashed
 line is the channel's theoretical peak, 64 GB/s. The grey area is the plateau:
-from there on, every point is within 5% of the best one.
+from there on, every point is within 5% of the best one. The dotted curve is a
+simple model, explained [below](#how-far-the-curve-is-from-a-simple-model).
 
 **What to take away.** Bandwidth climbs quickly and flattens at 16 KiB. At
 1 MiB the cluster reads at **63.97 GB/s, 99.96% of the peak**. In other words, a
-single cluster can saturate its local HBM channel.
+single cluster can saturate its local HBM channel. From 4 KiB up the measured
+curve sits exactly on the model; below 4 KiB it moves away from it, first
+above and then below.
 
 | Plateau from | 1 KiB | 4 KiB | 16 KiB | 64 KiB | 1 MiB |
 | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -91,6 +94,59 @@ The three samples of each size agree closely (the light band around the curve
 is their min–max, at most 0.7% wide from 1 KiB up). The 64 B–512 KiB values
 match the earlier run of this app, which stopped at 512 KiB, except 128 B
 (one 1 ns tick in a 79 ns sample).
+
+### How far the curve is from a simple model
+
+We use the same latency-bandwidth (alpha-beta/Hockney) model as the
+[sequential sweep](../app_dram_bandwidth_sequential/README.md#how-the-asymptote-is-calculated),
+on the median time per copy (sample time / 8):
+
+$$
+T(N)=\alpha+\beta N,\qquad B_{\infty}=1/\beta.
+$$
+
+In words: every copy pays a fixed cost `alpha`, then moves its `N` bytes at
+bandwidth `1/beta`. Fitting the 64, 128 and 256 KiB points gives
+**`alpha = 7.375 ns` per copy and `1/beta = 64.000 GB/s`**, exactly the
+channel's peak.
+
+**From 4 KiB to 1 MiB the model is exact.** Every predicted time matches the
+measured one to the picosecond, including the 512 KiB and 1 MiB points that
+were left out of the fit. Here the cluster behaves like an ideal pipe: a fixed
+cost, then the bytes at 64 GB/s.
+
+**What `alpha` means.** With eight copies in flight the fixed cost is paid
+once per sample, not once per copy: 8 × 7.375 = **59 ns per sample**. That is
+the 56.5 ns spent outside the DRAM bus window (see
+[below](#dram-bandwidth-vs-what-the-cluster-sees)) plus 2.5 ns by which the bus
+window is longer than the bytes alone would take. The sequential sweep pays
+`alpha = 50.125 ns` per copy instead: pipelining cuts the fixed cost of each
+copy by 6.8×, which is where its advantage on small and mid-size blocks comes
+from.
+
+**Below 4 KiB the curve leaves the model, in two different ways:**
+
+| Block | Measured | Model | Measured vs model |
+| ---: | ---: | ---: | ---: |
+| 32 B | 3.24 GB/s | 4.06 GB/s | −20% |
+| 64 B | 6.48 GB/s | 7.64 GB/s | −15% |
+| 256 B | 25.92 GB/s | 22.51 GB/s | +15% |
+| 512 B | 38.28 GB/s | 33.30 GB/s | +15% |
+| 1 KiB | 47.35 GB/s | 43.81 GB/s | +8% |
+| 4 KiB | 57.39 GB/s | 57.39 GB/s | 0% |
+
+- **Up to 128 B, slower than the model.** A sample takes 73–79 ns whatever
+  the block size. The eight requests reach the DRAM about 4.5 ns apart (at
+  4 B the bus window lasts 31 ns for 8 ns of data), so the time is set by
+  how fast the copies arrive, not by the bytes. The model has no term for this.
+- **From 256 B to 2 KiB, faster than the model.** Here the time outside the
+  DRAM bus window is about 42 ns instead of 56.5 ns
+  ([fixed cost chart](#dram-bandwidth-vs-what-the-cluster-sees)), so the
+  fixed cost is smaller than the `alpha` fitted on large blocks.
+
+So the model tells you what to expect from 4 KiB up, and only an upper or
+lower bound below. The sequential sweep shows the same split at 4 KiB, but
+there small copies only ever beat the model.
 
 ### One copy at a time vs eight in flight
 

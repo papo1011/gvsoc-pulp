@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Draw the pipelined sweep's figures, one chart per image, from the CSVs in a directory.
 
-  bandwidth.png               end-to-end bandwidth
+  bandwidth.png               end-to-end bandwidth, fitted latency-bandwidth model
   dram_vs_end_to_end.png      DRAM data-bus vs end-to-end bandwidth (needs dram.csv)
   fixed_cost.png              time of a sample outside the DRAM bus window (dram.csv)
   time_breakdown.png          where the time of a sample goes (dram.csv)
@@ -55,8 +55,11 @@ def main():
         f"Single cluster, local HBM: pipelined DMA reads ({CONFIGURATION})",
         plot.PIPELINED,
         f"End to end, {LABEL}, median and min-max of 3",
+        with_fit=True,
     )
     print(f"Plateau from {onset} bytes")
+    alpha, limit = plot.fit(curve)
+    print(f"Fit on 64-256 KiB: alpha = {alpha:.3f} ns per copy, B = {limit:.6f} GB/s")
     samples = None
     if (data / "dram.csv").exists():
         samples = plot.load_samples(data / "dram.csv")
