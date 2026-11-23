@@ -16,9 +16,13 @@ gap, and the two bank groups.
 A size can carry an address window, SIZE:FIRST:END, to keep only the requests
 FIRST to END bytes into the sample: a zoom into a large block.
 
+With --tdb OUT it instead copies the chosen samples into a small database in
+DRAMSys's own format (same tables, same rows, configuration included), which
+SQLite or DRAMSys's Trace Analyzer can open. OUT must not exist yet.
+
 Examples (the assets of this app):
-  query_trace.py simulation.log RUN_DIR --size 512 --size 1048576:0x3ff800:0x400800 \
-      > trace.csv
+  query_trace.py simulation.log RUN_DIR --size 512 > trace.csv
+  query_trace.py simulation.log RUN_DIR --size 512 --tdb trace.tdb
   query_trace.py simulation.log RUN_DIR --spacing > spacing.csv
 """
 
@@ -195,6 +199,50 @@ def size_spec(text):
     return parts[0], tuple(parts[1:]) or None
 
 
+def write_database(source, selected, output):
+    """Copy the requests of the selected samples, with all their phases, into a new
+    database with the source's schema. GeneralInfo (which holds the memspec and
+    controller configuration) and CommandLengths are copied whole; the per-time
+    statistics tables are left empty.
+    """
+    if output.exists():
+        raise ValueError(f"{output} already exists")
+    with closing(sqlite3.connect(output.resolve().as_uri(), uri=True)) as out:
+        out.execute("ATTACH DATABASE ? AS src", (source.resolve().as_uri() + "?mode=ro",))
+        schema = out.execute(
+            "SELECT type, name, sql FROM src.sqlite_master WHERE sql IS NOT NULL"
+        ).fetchall()
+        # Tables before indexes; the R-tree creates its own ranges_* tables.
+        for _, name, sql in sorted(schema, key=lambda entry: entry[0] == "index"):
+            if not name.startswith("ranges_"):
+                out.execute(sql)
+        out.execute("CREATE TEMP TABLE keep (id INTEGER PRIMARY KEY)")
+        for row, window in selected:
+            first, end = window or (0, row["hbm_span"])
+            out.execute(
+                "INSERT OR IGNORE INTO keep SELECT ID FROM src.Transactions "
+                "WHERE Command = 'R' AND TimeOfGeneration >= ? AND TimeOfGeneration < ? "
+                "AND Address >= ? AND Address < ?",
+                (
+                    row["start_ps"],
+                    row["end_ps"],
+                    row["hbm_offset"] + first,
+                    row["hbm_offset"] + end,
+                ),
+            )
+        for statement in (
+            "INSERT INTO GeneralInfo SELECT * FROM src.GeneralInfo",
+            "INSERT INTO CommandLengths SELECT * FROM src.CommandLengths",
+            "INSERT INTO Transactions SELECT * FROM src.Transactions WHERE ID IN keep",
+            "INSERT INTO Phases SELECT * FROM src.Phases WHERE Transact IN keep",
+            "INSERT INTO ranges SELECT * FROM src.ranges WHERE id IN (SELECT Range FROM Transactions)",
+        ):
+            out.execute(statement)
+        out.commit()
+        out.execute("DETACH DATABASE src")
+        out.execute("VACUUM")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -207,7 +255,12 @@ def main():
     )
     choice.add_argument("--spacing", action="store_true", help="burst spacing of every sample")
     parser.add_argument("--sample", type=int, default=0, help="sample index (default: 0)")
+    parser.add_argument(
+        "--tdb", type=Path, help="with --size: write a DRAMSys database extract instead of CSV"
+    )
     args = parser.parse_args()
+    if args.tdb and not args.size:
+        parser.error("--tdb needs --size")
     try:
         rows = measurements(args.log.read_text())
         if args.size:
@@ -218,6 +271,9 @@ def main():
         paths = list(args.database_dir.glob("DRAMSysRecordable0_*.tdb"))
         if len(paths) != 1:
             raise ValueError(f"Expected one channel 0 database, found {len(paths)}")
+        if args.tdb:
+            write_database(paths[0], rows, args.tdb)
+            return
         uri = paths[0].resolve().as_uri() + "?mode=ro"
         with closing(sqlite3.connect(uri, uri=True)) as connection:
             if args.spacing:

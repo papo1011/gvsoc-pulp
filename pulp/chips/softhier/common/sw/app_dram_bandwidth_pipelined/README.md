@@ -69,13 +69,16 @@ what you need before deleting it ([query_trace.py](query_trace.py)):
 python3 "$APP_DIR/query_trace.py" "$RUN_DIR/simulation.log" "$RUN_DIR" \
     --size 512 > "$RUN_DIR/trace.csv"
 python3 "$APP_DIR/query_trace.py" "$RUN_DIR/simulation.log" "$RUN_DIR" \
+    --size 512 --tdb "$RUN_DIR/trace.tdb"
+python3 "$APP_DIR/query_trace.py" "$RUN_DIR/simulation.log" "$RUN_DIR" \
     --spacing > "$RUN_DIR/spacing.csv"
 ```
 
 `trace.csv` has one row per 32 B request of the chosen samples (`--size` takes
-`SIZE:FIRST:END` to keep only part of a large one); `spacing.csv` counts, for
-every sample, the spacing between consecutive bursts and its rule (`L`, same
-bank group, or `S`, another).
+`SIZE:FIRST:END` to keep only part of a large one); `trace.tdb` is the same
+sample cut out of the DRAMSys trace, in its own format; `spacing.csv` counts,
+for every sample, the spacing between consecutive bursts and its rule (`L`,
+same bank group, or `S`, another).
 
 ## Results
 
@@ -252,17 +255,21 @@ could not.** Each pseudo-channel has 32 data wires at 8 Gb/s, which carry one
 32 B burst per nanosecond: 32 GB/s, 64 GB/s for the two. Two bursts on the same
 pseudo-channel at the same time would need twice the wires.
 
-DRAMSys does not simulate the wires. It decides when each read command may
-start by checking minimum distances between commands, and the time on the
-wires follows from those distances. Between bursts of two different bank
-groups the distance is `tCCD_S` = `CCDS` cycles. The HBM4 emulation uses 8-beat
-bursts (1 ns) but keeps `CCDS = 2` (0.5 ns), the HBM2 value for 4-beat bursts.
-DRAMSys's HBM2 checker (`CheckerHBM2.cpp`) even asserts 4-beat bursts in
-pseudo-channel mode, but the library is built with `-DNDEBUG`, so that check is
-compiled out. The model therefore lets a burst start 0.5 ns after another one on
-the same wires. In a real chip that is a timing violation that no controller
-would issue; in the simulator the data still arrives intact (`errors=0`),
-because it is copied, not sent over wires.
+DRAMSys does not model the wires; it works like a timetable. Before each read
+command it checks only the minimum distances from earlier commands: `tCCD_L`
+within a bank group, `tCCD_S` between bank groups, `tRCD` after opening a row.
+When the command goes out, DRAMSys simply computes when its data *would* be on
+the bus (`tRL + tDQSCK` later, for one burst) and uses that only to know when
+the answer is ready. It never checks that the bus is free.
+
+So the timetable is only right if the distances are right. Between bank groups
+the distance is `CCDS`: here 2 cycles (0.5 ns) for a burst that lasts 4 cycles
+(1 ns). That is the HBM2 value for 4-beat bursts, kept when the emulation moved
+to 8-beat bursts. DRAMSys's HBM2 checker (`CheckerHBM2.cpp`) even has an
+`assert` for 4-beat bursts, but the library is built with `-DNDEBUG`, which
+removes it. The simulator therefore starts a burst 0.5 ns after another one on
+the same wires. A real chip cannot do that; in the simulator the data still
+arrives intact (`errors=0`), because it is copied, not sent over wires.
 
 With `CCDS = 4`, equal to the burst, no burst ever overlaps and the bus tops at
 64.00 GB/s. **All results in this README use `CCDS = 4`.** Refreshes are
@@ -281,9 +288,11 @@ limit.
 
 ### What the overlap looks like
 
-We kept the DRAMSys database of a `CCDS = 4` and a `CCDS = 2` run and extracted
-the requests of a 512 B sample ([query_trace.py](query_trace.py),
-[trace_ccds4.csv](assets/trace_ccds4.csv), [trace_ccds2.csv](assets/trace_ccds2.csv)).
+We kept the DRAMSys trace of a `CCDS = 4` and a `CCDS = 2` run and took one
+512 B sample from each. The burst times are the ones DRAMSys wrote in its
+trace: computed from each read command as above, not measured on wires. So
+these pictures show the commands the simulator issued and the bus they imply.
+To check them yourself, see [Where the data comes from](#where-the-data-comes-from).
 
 ![Requests of the first three 512 B copies, CCDS = 4](assets/requests_512B_ccds4.png)
 
@@ -338,6 +347,44 @@ the burst spacings overlap; pauses where new rows must be opened (every 8 KiB
 of addresses) give nearly all of it back, leaving exactly the request rate.
 Full counts per sample and rule: [spacing_ccds4.csv](assets/spacing_ccds4.csv),
 [spacing_ccds2.csv](assets/spacing_ccds2.csv).
+
+### Where the data comes from
+
+Everything in this section comes from DRAMSys's own trace. With
+`DatabaseRecording: true` (on in the shared configuration), DRAMSys
+([tukl-msd/DRAMSys](https://github.com/tukl-msd/DRAMSys), commit `8e021ea`)
+writes every request and every DRAM command into an SQLite file in the run
+directory: `DRAMSysRecordable0_hbm4-emu-example_example_ch0.tdb` for channel 0.
+A full run makes about 1 GB per channel, too much for the repository.
+
+So `assets/` keeps the 512 B sample of the figures cut out of it, in the same
+format: [trace_ccds4.tdb](assets/trace_ccds4.tdb) and
+[trace_ccds2.tdb](assets/trace_ccds2.tdb), 128 requests with all their phases.
+Each file also stores the configuration it was made with
+(`GeneralInfo.Memspec`), so it shows by itself whether `CCDS` was 4 or 2. The
+CSVs next to them are what the figures read. All of them were made from the
+full traces by [query_trace.py](query_trace.py) (commands in
+[Build and run](#build-and-run)); the runs used the firmware at pulp commit
+`0541a8a`, and rerunning them gives exactly the CSVs in `assets/`.
+
+To look at the bursts yourself:
+
+```bash
+python3 - <<'EOF'
+import sqlite3
+db = sqlite3.connect("assets/trace_ccds2.tdb")
+for begin, end, group in db.execute(
+        "SELECT DataStrobeBegin, DataStrobeEnd, BankGroup FROM Phases "
+        "WHERE PhaseName = 'RD' AND Rank = 0 ORDER BY DataStrobeBegin LIMIT 10"):
+    print(begin, end, group)
+EOF
+```
+
+Times are in picoseconds and `Rank` is the pseudo-channel. Every burst lasts
+1000 ps. In `trace_ccds4.tdb` each burst starts 1000 ps after the previous
+one; in `trace_ccds2.tdb` some start only 500 ps after it, while it is still
+on the bus. DRAMSys's own viewer for these files, the Trace Analyzer, is
+available from its authors (see the DRAMSys README).
 
 ## Regenerate the figures
 
