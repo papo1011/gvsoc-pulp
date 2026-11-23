@@ -9,7 +9,7 @@ The DM core of cluster 0 reads its local HBM 0 into TCDM. Sizes double from
 > at ~57.9 GB/s through a modeling artifact (see
 > [Wide-port arbiter model](#wide-port-arbiter-model)); the shared DRAMSys
 > configuration's `CCDS = 2` lets bursts overlap on the data bus and exceed
-> 64 GB/s (see the [pipelined guide](../app_dram_bandwidth_pipelined/README.md#why-the-plateau-exceeds-64-gbs)).
+> 64 GB/s (see the [pipelined guide](../app_dram_bandwidth_pipelined/README.md#why-ccds--2-exceeded-64-gbs)).
 
 ## Streaming vs warm
 
@@ -86,8 +86,10 @@ the payload bytes (copies below 32 B read one 32 B burst). The plateau starts
 at **64 KiB**; at **1 MiB** bandwidth is **63.786 GB/s**, 99.7% of the 64 GB/s
 nominal, and DRAMSys delivers 63.79 GB/s during that sample. The shaded band is
 the plateau region (every median from there on is at least 95% of the measured
-maximum). The figure shows 1–128 KiB; all data is in
-[assets/bandwidth.csv](assets/bandwidth.csv).
+maximum). The light band around the curve is the min–max of the three samples
+and the dotted curve is the fitted model ([below](#how-the-asymptote-is-calculated)).
+Like every figure of the DRAM sweeps, it covers the whole sweep, 4 B to 1 MiB, on
+the same axis. All data is in [assets/bandwidth.csv](assets/bandwidth.csv).
 
 | Copy | `CCDS = 2` (2026-11-20) | `CCDS = 4` |
 | ---: | ---: | ---: |
@@ -115,6 +117,54 @@ $$
 copy measured, 8250.125 and 16450.125 ns predicted). `alpha` is an effective
 fixed cost, not a separate measurement of DMA startup. With `CCDS = 2` the same
 fit gave 64.251 GB/s, above the nominal peak.
+
+The model holds from 4 KiB up, but copies below 4 KiB beat it (1 KiB: 20.2 GB/s
+measured, 15.5 GB/s predicted): their fixed cost is smaller than `alpha`, as the
+next section shows.
+
+## DRAM bus vs end-to-end bandwidth
+
+![DRAM data bus vs end-to-end bandwidth](assets/dram_vs_end_to_end.png)
+
+The two curves measure the same samples at two places:
+
+- **End to end** (blue, `bandwidth.csv`): payload bytes / core-timed interval,
+  from issuing the first copy to the end of the last wait. This is what
+  software sees.
+- **DRAM data bus** (green, `dram.csv`): bytes the DRAM transferred / the time
+  from the first burst's start to the last burst's end on the data bus, from
+  the DRAMSys records (`bus_GB_per_s`). It excludes the trip to the DRAM and
+  back. Below 32 B the DRAM still reads one 32 B burst per copy, so it moves
+  more bytes than the payload.
+
+The bottom panel is the difference between the two intervals: the time spent
+before the first burst and after the last one.
+
+![Where the time of a sample goes](../app_dram_bandwidth_pipelined/assets/time_breakdown.png)
+
+The breakdown splits each sample into bus busy time, bus idle time between the
+first and last burst, and the time outside that window. Take-home points:
+
+- **The DRAM saturates, and end to end follows it.** At 1 MiB the bus carries
+  63.81 GB/s and is busy 99.7% of its window; end to end reaches 63.79 GB/s.
+- **The difference is a fixed latency, not a lower bandwidth.** From 4 KiB to
+  1 MiB the time outside the bus window is 57.5–59 ns per sample, whatever the
+  size: the request's trip to the DRAM before the first burst and the last
+  data's trip back. It costs 6% of a 4 KiB sample and 0.04% of a 1 MiB one, so
+  it explains why end-to-end bandwidth approaches the bus bandwidth only for
+  large blocks.
+- **With one copy in flight, the DRAM waits for the cluster.** Inside the bus
+  window there are about 340–380 ns of idle bus per sample from 8 KiB up: seven
+  gaps of about 50 ns between consecutive copies, each the round trip of the
+  next copy's request. At 4 KiB the bus is busy only 55% of the sample. The
+  [pipelined sweep](../app_dram_bandwidth_pipelined/README.md) removes these
+  gaps by keeping eight copies queued.
+- **Small copies are almost all latency.** Up to 512 B the bus is busy less
+  than 18% of the sample. Their time outside the window is about 43.5 ns
+  instead of 58.5 ns; from 512 B it grows by about 2 ns per 512 B up to 4 KiB, the
+  largest AXI burst the iDMA issues, and is then flat. The cause is not traced
+  yet: it suggests the last burst's data crossing the interconnect after the
+  DRAM has finished, but no trace confirms it.
 
 ## Wide-port arbiter model
 
@@ -161,13 +211,31 @@ The trace shows the difference with
 `Handling end of read request (... latency N)` grow by 7 per burst with the
 synchronous router and stay at 0 with the asynchronous one.
 
-## Regenerate the figure
+![Streaming reads before and after each simulator fix](assets/simulator_fixes.png)
+
+The same sweep in the three simulator configurations; the bottom panel is the
+difference from the final one. The synchronous router is 3.9% slower at
+16 KiB and 9.4% slower at 1 MiB: it adds 7 ns to every 4 KiB burst, so the loss
+grows with the number of bursts per copy. `CCDS = 2` is 0.5–3.2% faster from
+8 KiB up and 7.4–7.7% faster at 2–4 KiB, because its overlapping bursts shorten
+each copy's data phase; the synchronous run shares that advantage at 2–4 KiB.
+Below 1 KiB the differences (up to 18%) change sign from size to size: a sample
+takes only about 270 ns, so a few ns of DRAM state (open rows, refresh timing)
+dominate.
+
+## Regenerate the figures
 
 ```bash
 APP_DIR="$PWD/pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_streaming"
-pulp/.venv/bin/python "$APP_DIR/plot.py" "$APP_DIR/assets/bandwidth.csv"
+pulp/.venv/bin/python "$APP_DIR/plot.py"
 ```
 
-Use `"$RUN_DIR/bandwidth.csv"` for a new run, or `--output path.png` to save
-elsewhere. The fit needs the 64/128/256 KiB points. Warm and streaming share
-`dram_common/plot_bandwidth.py`.
+`plot.py` reads the CSVs in `assets/` and redraws `bandwidth.png`,
+`dram_vs_end_to_end.png` (from `dram.csv`) and `simulator_fixes.png` (from
+`bandwidth_ccds2.csv` and `bandwidth_sync_router_ccds2.csv`, the 2026-11-20 and
+earlier runs). For a new run, `plot.py "$RUN_DIR"` reads `bandwidth.csv` and
+`dram.csv` there and writes the figures next to them (`--output-dir` changes
+this); figures whose CSVs are missing are skipped. The fit needs the
+64/128/256 KiB points. All DRAM sweep figures share
+[dram_common/plot_sweep.py](../dram_common/plot_sweep.py), which fixes the
+4 B–1 MiB axis.

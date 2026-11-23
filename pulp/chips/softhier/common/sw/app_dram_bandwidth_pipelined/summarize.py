@@ -14,11 +14,11 @@ from dram_common.analysis import require_success
 
 NAME = "SoftHier pipelined DRAM bandwidth"
 PREFIX = "[dram-pipelined]"
-SIZES = tuple(1 << power for power in range(6, 20))  # 64 B .. 512 KiB
+SIZES = tuple(1 << power for power in range(2, 21))  # 4 B .. 1 MiB
 SAMPLES = 3
 REPEATS = 8
 REGION = 4 << 20
-REGION_BYTES = 28 << 20
+REGION_BYTES = 48 << 20
 FIELDS = ("operation", "cluster", "channel", "bytes", "repetitions", "sample", "hbm_offset")
 
 
@@ -27,8 +27,9 @@ def offsets():
     result = {}
     cursor = REGION
     for size in SIZES:
+        alignment = max(size, 32)
         for sample in range(SAMPLES):
-            cursor = (cursor + size - 1) & ~(size - 1)
+            cursor = (cursor + alignment - 1) & ~(alignment - 1)
             result[size, sample] = cursor
             cursor += REPEATS * size
     assert cursor <= REGION + REGION_BYTES

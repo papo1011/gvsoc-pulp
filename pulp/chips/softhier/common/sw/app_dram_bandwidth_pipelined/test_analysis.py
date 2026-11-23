@@ -18,7 +18,7 @@ from app_dram_bandwidth_warm.summarize import plateau, summarize
 
 def complete_log(rate=lambda size: 10):
     """Synthetic sweep; `rate` gives bytes/ns for each size."""
-    lines = ["[dram-pipelined] first_bytes=64 last_bytes=524288 samples=3 in_flight=8"]
+    lines = ["[dram-pipelined] first_bytes=4 last_bytes=1048576 samples=3 in_flight=8"]
     windows = offsets()
     start = 1_000_000
     for size in SIZES:
@@ -53,7 +53,7 @@ class PipelinedAnalysisTest(unittest.TestCase):
         log = complete_log()
         first = next(line for line in log.splitlines() if "cluster=" in line)
         invalid = (
-            log.replace("last_bytes=524288", "last_bytes=1048576"),
+            log.replace("last_bytes=1048576", "last_bytes=524288"),
             log.replace("errors=0", "errors=1", 1),
             log.replace("repetitions=8", "repetitions=1", 1),
             log.replace("operation=dma_read", "operation=dma_write", 1),

@@ -1,124 +1,106 @@
 #!/usr/bin/env python3
-"""Plot pipelined contiguous read bandwidth around its plateau.
+"""Draw the pipelined sweep's figures from the CSVs in a directory.
 
-One panel with a narrow bandwidth axis, from half the plateau onset to
-512 KiB, so the flatness of the plateau is visible; smaller sizes are in the
-CSV. The onset uses the warm sweep's criterion (from there on every median is
-at least 95% of the maximum); the plateau level is the mean of the last three
-sizes, whose medians that criterion requires to span at most 3%.
+  bandwidth.png              end-to-end bandwidth
+  dram_vs_end_to_end.png     DRAM data-bus vs end-to-end bandwidth (needs dram.csv)
+  ccds.png                   tCCD_S = 2 against tCCD_S = 4 (needs bandwidth_ccds2.csv)
+  streaming_vs_pipelined.png one against eight copies in flight
+  time_breakdown.png         where the time of a sample goes, both sweeps
+                             (both need the streaming sweep's CSVs)
+
+Figures whose inputs are missing are skipped.
 """
 
 import argparse
-import csv
 from pathlib import Path
-from statistics import mean
 import sys
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_dram_bandwidth_warm.summarize import plateau
+from dram_common import plot_sweep as plot
 
-COLOR = "#287f8e"
-PEAK_COLOR = "#ba6540"
-
-
-def size_label(size):
-    return f"{size // 1024} KiB" if size >= 1024 else f"{size} B"
+HERE = Path(__file__).resolve().parent
+LABEL = "pipelined (eight copies in flight)"
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("csv", type=Path, help="bandwidth.csv produced by summarize.py")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
     parser.add_argument(
-        "--output", type=Path, default=Path(__file__).parent / "assets/bandwidth.png"
+        "directory",
+        type=Path,
+        nargs="?",
+        default=HERE / "assets",
+        help="directory with the CSVs (default: this app's assets/)",
+    )
+    parser.add_argument(
+        "--output-dir", type=Path, help="where to write the figures (default: directory)"
+    )
+    parser.add_argument(
+        "--streaming",
+        type=Path,
+        default=HERE.parent / "app_dram_bandwidth_streaming/assets",
+        help="directory with the streaming sweep's bandwidth.csv and dram.csv",
     )
     args = parser.parse_args()
-    with args.csv.open() as source:
-        rows = list(csv.DictReader(source))
-    points = sorted(
-        (
-            {"bytes": int(row["bytes"]), "median_GB_per_s": float(row["median_GB_per_s"])}
-            for row in rows
-        ),
-        key=lambda point: point["bytes"],
+    data, out = args.directory, args.output_dir or args.directory
+    curve = plot.load_curve(data / "bandwidth.csv")
+    onset = plot.bandwidth_figure(
+        curve,
+        out / "bandwidth.png",
+        "Single cluster, local HBM: pipelined DMA reads (tCCD_S = 4)",
+        plot.PIPELINED,
+        f"End to end, {LABEL}, median and min-max of 3",
     )
-    peak = float(rows[0]["nominal_peak_GB_per_s"])
-    sizes = [point["bytes"] for point in points]
-    onset = plateau(points)
-    level = mean(point["median_GB_per_s"] for point in points[-3:]) if onset else None
-    # From half the plateau onset (or the last four sizes) to the end.
-    shown = [point for point in points if point["bytes"] >= (onset or sizes[-4]) / 2]
-    x = [point["bytes"] for point in shown]
-    y = [point["median_GB_per_s"] for point in shown]
-
-    fig, ax = plt.subplots(figsize=(10, 5.5), layout="constrained")
-    ax.plot(
-        x,
-        y,
-        marker="o",
-        color=COLOR,
-        linewidth=1.8,
-        markersize=5,
-        label="Read (HBM → TCDM), median",
-    )
-    for size, rate in zip(x, y):
-        ax.annotate(
-            f"{rate:.2f}",
-            (size, rate),
-            xytext=(0, -9),
-            textcoords="offset points",
-            ha="center",
-            va="top",
-            fontsize=8,
-            color=COLOR,
+    print(f"Plateau from {onset} bytes")
+    samples = None
+    if (data / "dram.csv").exists():
+        samples = plot.load_samples(data / "dram.csv")
+        plot.dram_figure(
+            curve,
+            samples,
+            out / "dram_vs_end_to_end.png",
+            "Pipelined reads: DRAM data bus vs end to end (tCCD_S = 4)",
+            plot.PIPELINED,
+            LABEL,
         )
-    if onset:
-        ax.axvspan(
-            onset / 1.2,
-            x[-1] * 1.3,
-            color=COLOR,
-            alpha=0.06,
-            linewidth=0,
-            label="Plateau region (≥ 95% of the measured maximum)",
+    if (data / "bandwidth_ccds2.csv").exists():
+        plot.comparison_figure(
+            [
+                ("tCCD_S = 4 (final)", curve, plot.PIPELINED, "o"),
+                (
+                    "tCCD_S = 2 (shared DRAMSys configuration)",
+                    plot.load_curve(data / "bandwidth_ccds2.csv"),
+                    plot.OLDER[0],
+                    "s",
+                ),
+            ],
+            out / "ccds.png",
+            "Pipelined reads, asynchronous router: tCCD_S = 2 vs 4",
+            relative="percent",
+            relative_label="tCCD_S = 2 faster\nthan tCCD_S = 4 (%)",
         )
-        ax.axhline(
-            level,
-            color=COLOR,
-            linestyle=":",
-            linewidth=1.4,
-            label=f"Plateau from {size_label(onset)}: {level:.2f} GB/s",
+    if (args.streaming / "bandwidth.csv").exists():
+        streaming = plot.load_curve(args.streaming / "bandwidth.csv")
+        plot.comparison_figure(
+            [
+                ("Streaming (one copy in flight)", streaming, plot.STREAMING, "o"),
+                ("Pipelined (eight copies in flight)", curve, plot.PIPELINED, "s"),
+            ],
+            out / "streaming_vs_pipelined.png",
+            "One vs eight copies in flight, asynchronous router, tCCD_S = 4",
+            relative="ratio",
+            relative_label="Pipelined / streaming",
         )
-    ax.axhline(
-        peak,
-        color=PEAK_COLOR,
-        linestyle="--",
-        linewidth=1.2,
-        label=f"Theoretical bandwidth ({peak:g} GB/s)",
-    )
-
-    low, high = min(y + [peak]), max(y + [peak])
-    margin = max((high - low) * 0.12, 0.5)
-    ax.set_xscale("log", base=2)
-    ax.set_xticks(x, [size_label(size) for size in x])
-    ax.set_xlim(x[0] / 1.3, x[-1] * 1.3)
-    ax.set_ylim(low - margin, high + margin)
-    ax.grid(True, alpha=0.2)
-    ax.set_xlabel("Block size (8 consecutive blocks in flight per sample)")
-    ax.set_ylabel("Useful bandwidth (GB/s)")
-    ax.set_title("Single cluster, local HBM: pipelined contiguous DMA reads")
-    ax.legend(loc="lower right", fontsize=9)
-
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(args.output, dpi=160)
-    fig.savefig(args.output.with_suffix(".svg"))
-    plt.close(fig)
-    print(args.output)
-    if onset:
-        print(f"Plateau from {onset} bytes at {level:.3f} GB/s")
+    if samples and (args.streaming / "dram.csv").exists():
+        plot.breakdown_figure(
+            [
+                ("Streaming (one copy in flight)", plot.load_samples(args.streaming / "dram.csv")),
+                ("Pipelined (eight copies in flight)", samples),
+            ],
+            out / "time_breakdown.png",
+            "Where the time of a sample goes (median sample per size, tCCD_S = 4)",
+        )
 
 
 if __name__ == "__main__":

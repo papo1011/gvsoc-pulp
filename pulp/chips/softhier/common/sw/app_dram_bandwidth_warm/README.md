@@ -72,10 +72,11 @@ does not enforce this peak exactly.
 
 ![Warm DMA read bandwidth](assets/bandwidth.png)
 
-The figure shows 1–128 KiB; all 18 sizes are in
-[assets/bandwidth.csv](assets/bandwidth.csv). The dotted line is the large-copy
-limit fitted with `T(N) = alpha + beta·N` on 64/128/256 KiB: `alpha = 35.375 ns`,
-`1/beta = 57.894 GB/s`, matching the excluded 512 KiB point. This limit is the
+The figure uses the 4 B–1 MiB axis shared by all DRAM sweep figures; this sweep
+stops at 512 KiB. All 18 sizes are in [assets/bandwidth.csv](assets/bandwidth.csv);
+the light band is the min–max of the three samples. The dotted curve is the
+model `N / (alpha + N/B)` fitted with `T(N) = alpha + N/B` on 64/128/256 KiB:
+`alpha = 35.375 ns`, `B = 57.894 GB/s`, matching the excluded 512 KiB point. This limit is the
 synchronous wide-port artifact (see the note above); the fit is explained in the
 [streaming guide](../app_dram_bandwidth_streaming/README.md#how-the-asymptote-is-calculated).
 
@@ -83,8 +84,8 @@ To regenerate the figure:
 
 ```bash
 APP_DIR="$PWD/pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_warm"
-pulp/.venv/bin/python "$APP_DIR/plot.py" "$APP_DIR/assets/bandwidth.csv"
+pulp/.venv/bin/python "$APP_DIR/plot.py"
 ```
 
-Use `"$RUN_DIR/bandwidth.csv"` for a new run, or `--output path.png` to save
-elsewhere.
+Use `plot.py "$RUN_DIR/bandwidth.csv"` for a new run (the figure goes next to
+the CSV), or `--output path.png` to save elsewhere.

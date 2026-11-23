@@ -60,8 +60,8 @@
      datasets from 512 to 2048 KiB, with extra points around the 1 MiB TCDM
      limit to measure the cost of a small final DMA copy.
    - [`app_dram_bandwidth_pipelined`](common/sw/app_dram_bandwidth_pipelined/README.md):
-     contiguous reads from 64 B to 512 KiB with eight DMA copies in flight, to
-     find the sustained read plateau.
+     contiguous reads from 4 B to 1 MiB with eight DMA copies in flight, to
+     find the sustained read plateau, with DRAM-bus vs end-to-end figures.
 
    Select one when building the software:
 

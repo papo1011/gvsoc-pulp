@@ -87,7 +87,9 @@ class AnalysisTest(unittest.TestCase):
                         INSERT INTO GeneralInfo VALUES ('PS');
                         CREATE TABLE Transactions (ID INTEGER, Command TEXT, DataLength INTEGER,
                                                    TimeOfGeneration INTEGER, Address INTEGER);
-                        CREATE TABLE Phases (Transact INTEGER, PhaseName TEXT, PhaseEnd INTEGER);
+                        CREATE TABLE Phases (Transact INTEGER, PhaseName TEXT, PhaseEnd INTEGER,
+                                             DataStrobeBegin INTEGER, DataStrobeEnd INTEGER,
+                                             Rank INTEGER);
                     """)
                     for identifier, row in enumerate(rows):
                         if row["channel"] != channel:
@@ -108,13 +110,23 @@ class AnalysisTest(unittest.TestCase):
                             # Responses beyond the CPU interval still belong to
                             # requests issued by this worker during its window.
                             db.execute(
-                                "INSERT INTO Phases VALUES (?, 'RESP', ?)",
+                                "INSERT INTO Phases VALUES (?, 'RESP', ?, 0, 0, 0)",
                                 (tx, row["end_ps"] + 10000),
+                            )
+                            db.execute(
+                                "INSERT INTO Phases VALUES (?, ?, 0, ?, ?, 0)",
+                                (
+                                    tx,
+                                    "WR" if command == "W" else "RD",
+                                    row["start_ps"] + 30000,
+                                    row["start_ps"] + 40000,
+                                ),
                             )
             results = query(log, directory)
         self.assertEqual(len(results), 540)
-        self.assertEqual(sum(row[-5] for row in results), sum(map(payload_bytes, rows)))
-        self.assertTrue(all(row[-6] == 1 for row in results))
+        self.assertEqual(sum(row[-8] for row in results), sum(map(payload_bytes, rows)))
+        self.assertTrue(all(row[-9] == 1 for row in results))
+        self.assertTrue(all(row[-3] == "10.000" and row[-1] == "100.00" for row in results))
 
     def test_original_log_remains_readable(self):
         lines = []
