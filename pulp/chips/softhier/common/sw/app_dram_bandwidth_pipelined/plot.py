@@ -9,10 +9,8 @@
   ccds_bus.png                DRAM data bus, tCCD_S = 2 vs 4 (dram.csv, dram_ccds2.csv)
   sequential_vs_pipelined.png  one vs eight copies in flight
                               (needs the sequential sweep's bandwidth.csv)
-  bursts_512B_ccds{4,2}.png   every burst of a 512 B sample on the DRAM data bus
-  requests_512B_ccds{4,2}.png  the same sample, request by request
-  bursts_1MiB_ccds{4,2}.png   a 1 MiB sample around an 8 KiB boundary
-                              (all three need trace_ccds4.csv / trace_ccds2.csv)
+  requests_512B_ccds{4,2}.png  the first copies of a 512 B sample, request by
+                              request (needs trace_ccds4.csv / trace_ccds2.csv)
 
 Figures whose inputs are missing are skipped.
 """
@@ -128,29 +126,23 @@ def main():
             out / "sequential_vs_pipelined.png",
             f"One vs eight copies in flight ({CONFIGURATION})",
         )
-    for ccds in (4, 2):
-        path = data / f"trace_ccds{ccds}.csv"
-        if not path.exists():
-            continue
-        trace = trace_figures.load_trace(path)
-        small = trace[512, 0]
-        trace_figures.bus_timeline_figure(
-            small,
-            out / f"bursts_512B_ccds{ccds}.png",
-            f"512 B blocks, eight in flight: every burst on the DRAM data bus, tCCD_S = {ccds}",
-        )
-        trace_figures.pipeline_figure(
-            small,
-            out / f"requests_512B_ccds{ccds}.png",
-            f"512 B blocks, eight in flight: requests on pseudo-channel 0, tCCD_S = {ccds}",
-        )
-        if (1 << 20, 0) in trace:
-            trace_figures.bus_timeline_figure(
-                trace[1 << 20, 0],
-                out / f"bursts_1MiB_ccds{ccds}.png",
-                "1 MiB blocks, 2 KiB either side of the 8 KiB boundary at 4 MiB: "
-                f"DRAM data bus, tCCD_S = {ccds}",
-                xlim=(-1, 66),
+    traces = {
+        ccds: trace_figures.load_trace(data / f"trace_ccds{ccds}.csv")[512, 0]
+        for ccds in (4, 2)
+        if (data / f"trace_ccds{ccds}.csv").exists()
+    }
+    if traces:
+        # The same time axis for both, so the two staircases compare directly.
+        ranges = [
+            trace_figures.time_range(trace_figures.first_copies(t, 3)[0]) for t in traces.values()
+        ]
+        xlim = (min(r[0] for r in ranges) - 0.5, max(r[1] for r in ranges) + 0.5)
+        for ccds, trace in traces.items():
+            trace_figures.pipeline_figure(
+                trace,
+                out / f"requests_512B_ccds{ccds}.png",
+                f"First three 512 B copies, pseudo-channel 0, tCCD_S = {ccds}",
+                xlim=xlim,
             )
 
 

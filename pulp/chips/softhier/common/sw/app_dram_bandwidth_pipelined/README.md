@@ -67,14 +67,15 @@ what you need before deleting it ([query_trace.py](query_trace.py)):
 
 ```bash
 python3 "$APP_DIR/query_trace.py" "$RUN_DIR/simulation.log" "$RUN_DIR" \
-    --size 512 --size 1048576:0x3ff800:0x400800 > "$RUN_DIR/trace.csv"
+    --size 512 > "$RUN_DIR/trace.csv"
 python3 "$APP_DIR/query_trace.py" "$RUN_DIR/simulation.log" "$RUN_DIR" \
     --spacing > "$RUN_DIR/spacing.csv"
 ```
 
-`trace.csv` has one row per 32 B request of the chosen samples (here all of a
-512 B sample, and 4 KiB of a 1 MiB sample around 4 MiB); `spacing.csv` counts,
-for every sample, the spacing between consecutive bursts and its rule.
+`trace.csv` has one row per 32 B request of the chosen samples (`--size` takes
+`SIZE:FIRST:END` to keep only part of a large one); `spacing.csv` counts, for
+every sample, the spacing between consecutive bursts and its rule (`L`, same
+bank group, or `S`, another).
 
 ## Results
 
@@ -246,191 +247,81 @@ where a large yellow area shows the DRAM waiting for the cluster between copies.
 
 ## Why `CCDS = 2` exceeded 64 GB/s
 
-Before the fix, this sweep measured more than the theoretical peak, which
-should be impossible. The cause was one DRAMSys timing parameter.
+**No physical limit was broken: the simulator moved bytes that real wires
+could not.** Each pseudo-channel has 32 data wires at 8 Gb/s, which carry one
+32 B burst per nanosecond: 32 GB/s, 64 GB/s for the two. Two bursts on the same
+pseudo-channel at the same time would need twice the wires.
 
-![tCCD_S = 2 vs 4, end to end](assets/ccds.png)
+DRAMSys does not simulate the wires. It decides when each read command may
+start by checking minimum distances between commands, and the time on the
+wires follows from those distances. Between bursts of two different bank
+groups the distance is `tCCD_S` = `CCDS` cycles. The HBM4 emulation uses 8-beat
+bursts (1 ns) but keeps `CCDS = 2` (0.5 ns), the HBM2 value for 4-beat bursts.
+DRAMSys's HBM2 checker (`CheckerHBM2.cpp`) even asserts 4-beat bursts in
+pseudo-channel mode, but the library is built with `-DNDEBUG`, so that check is
+compiled out. The model therefore lets a burst start 0.5 ns after another one on
+the same wires. In a real chip that is a timing violation that no controller
+would issue; in the simulator the data still arrives intact (`errors=0`),
+because it is copied, not sent over wires.
 
-**What it shows.** End-to-end bandwidth with the shared DRAMSys configuration
-(`CCDS = 2`, grey) and with the corrected one (`CCDS = 4`, orange).
-
-**What to take away.** The curves almost overlap, but the grey one ends above
-the 64 GB/s line (64.22 GB/s at 1 MiB). The difference is small, but it is
-enough to put a measurement above a physical limit.
+With `CCDS = 4`, equal to the burst, no burst ever overlaps and the bus tops at
+64.00 GB/s. **All results in this README use `CCDS = 4`.** Refreshes are
+postponed out of these short samples; a longer stream would pay up to about 5%
+for them (`tRFC / tREFI` = 65 ns / 1.25 µs).
 
 ![tCCD_S = 2 vs 4, DRAM data bus](assets/ccds_bus.png)
 
-**What it shows.** The same comparison on the DRAM data bus.
+**What it shows.** DRAM bus bandwidth with the shared configuration
+(`CCDS = 2`, grey) and the corrected one (`CCDS = 4`, green).
+**What to take away.** With `CCDS = 2` the bus goes above the physical limit:
+67.4 GB/s at 512 B, 64.25 GB/s at 1 MiB. With `CCDS = 4` it never passes
+64.00 GB/s. End to end the difference is smaller (64.22 vs 63.97 GB/s at 1 MiB,
+[ccds.png](assets/ccds.png)), but enough to put a measurement above a physical
+limit.
 
-**What to take away.** With `CCDS = 2` the DRAM bus itself goes above the
-physical limit, up to **67.4 GB/s at 512 B**. That can only happen if two
-bursts use the bus at the same time. With `CCDS = 4` the bus never goes above
-64.0 GB/s.
+### What the overlap looks like
 
-| | `CCDS = 2` (shared configuration) | `CCDS = 4` |
-| --- | ---: | ---: |
-| Plateau from | 16 KiB | 16 KiB |
-| End to end, 4 KiB | 58.00 GB/s | 57.39 GB/s |
-| End to end, 1 MiB | **64.22 GB/s** | 63.97 GB/s |
-| DRAM bus, 1 MiB | **64.25 GB/s** | 64.00 GB/s |
-| Bus occupancy per pseudo-channel, 1 MiB | **100.4%** | 100.0% |
-| Bus occupancy per pseudo-channel, 1 KiB | **102.6–103.4%** | 99.0% |
+We kept the DRAMSys database of a `CCDS = 4` and a `CCDS = 2` run and extracted
+the requests of a 512 B sample ([query_trace.py](query_trace.py),
+[trace_ccds4.csv](assets/trace_ccds4.csv), [trace_ccds2.csv](assets/trace_ccds2.csv)).
 
-An occupancy above 100% means two bursts shared the data bus. End to end,
-`CCDS = 2` is faster by nothing up to 64 B, 0–3.9% from 128 B to 512 B,
-1.1–2.4% at 1–4 KiB, and 0.4% from 128 KiB up. The
-[burst-by-burst view](#burst-by-burst-where-the-overlaps-happen) below shows
-where the overlaps happen and why the `CCDS = 2` curve settles at 64.25 GB/s
-instead of coming back to 64.
+![Requests of the first three 512 B copies, CCDS = 4](assets/requests_512B_ccds4.png)
 
-**Why it happened.** The HBM4 emulation is configured as HBM2, which DRAMSys supports, with 8-beat
-bursts (`tBURST` = 4 cycles = 1 ns) but a bank-group-to-bank-group column
-spacing `CCDS` of 2 cycles, the HBM2 value for 4-beat bursts (DRAMSys's own
-`HBM2.json` uses BL4 with `CCDS = 2`). `CheckerHBM2.cpp` spaces consecutive
-reads on a pseudo-channel only by `tCCDL` (same bank group) and `tCCDS`
-(different bank group); `tBURST` does not enter that check, which assumes
-`tCCDS >= tBURST`. With `CCDS = 2`, some bursts start 0.5 ns after the previous
-one, always in a different bank group, and share the bus with it.
+**What it shows.** The first three copies on pseudo-channel 0, one row per 32 B
+request: waiting in the controller (light grey), read command to data (dark
+grey), burst on the data bus (blue).
+**What to take away.** A clean staircase: one burst per nanosecond, never two
+at once.
 
-**The fix.** With `CCDS = 4` every overlap disappears: each pseudo-channel carries one burst
-per nanosecond and the bus delivers exactly 64.0 GB/s. Row changes are hidden by
-bank parallelism, and refreshes are postponed out of these short samples
-(`RefreshMaxPostponed` allows 128, about 160 µs; the longest sample takes
-131 µs); a longer continuous stream would pay for them, up to about 5%
-(`tRFC / tREFI` = 65 ns / 1.25 µs).
+![Requests of the first three 512 B copies, CCDS = 2](assets/requests_512B_ccds2.png)
 
-### Burst by burst: where the overlaps happen
+**What to take away.** In red, bursts that start while another burst of the
+same pseudo-channel is still on the wires. Every overlap is between two
+*different* bank groups, where only `tCCD_S` applies; two bursts of the same
+bank group are never less than 1 ns apart (`tCCD_L`). Bursts of the two pseudo-channels
+overlap in time normally, on separate wires, and are not marked.
 
-The curves above only say *that* bursts overlapped. To see *where*, we kept the
-DRAMSys database of a `CCDS = 4` and a `CCDS = 2` run (both reproduce the CSVs
-above exactly) and extracted every request of two samples: when it reached the
-controller, when its row was opened, when its read command left, when its burst
-was on the data bus, and which bank group and bank it used
-([trace_ccds4.csv](assets/trace_ccds4.csv), [trace_ccds2.csv](assets/trace_ccds2.csv)).
+### Why the `CCDS = 2` curve settles at 64.25 GB/s
 
-Each pseudo-channel has its own data wires (32 bits, 32 GB/s), shared by all
-its bank groups: a burst holds them for 1 ns. Bursts on the two pseudo-channels
-run side by side, which is how the channel reaches 64 GB/s; two bursts on the
-*same* pseudo-channel at once are physically impossible. Two consecutive bursts
-on a pseudo-channel are spaced by one of two rules:
-
-- **L**, same bank group: the next burst waits `tCCD_L` = 4 cycles = 1 ns,
-  exactly the length of a burst. It can never overlap.
-- **S**, different bank group: it waits `tCCD_S` = `CCDS` cycles. That is 1 ns
-  with `CCDS = 4`, but only **0.5 ns with `CCDS = 2`**: half a burst.
-
-So only an S can put two bursts on the same pseudo-channel at once. A real
-device needs `tCCD_S` at least as long as a burst; DRAMSys's HBM2 checker does
-not enforce it (see above).
-
-![Every burst of a 512 B sample, CCDS = 4](assets/bursts_512B_ccds4.png)
-
-**What it shows.** All 128 bursts of one 512 B sample (eight copies of 16
-bursts), one row per pseudo-channel. Colour and number give the bank group; the
-letter under each burst is the rule that spaced it from the previous one; a
-triangle marks a burst whose row had to be opened first. The dashed line is
-where the bus would end at exactly one burst per nanosecond.
-
-**What to take away.** With `CCDS = 4` the bus is one solid row: 64 bursts in
-64 ns on each pseudo-channel. Each copy reads two bursts from each of bank
-groups 4–7, so the rules alternate L, S, L, S, and every spacing is exactly
-1 ns. The rows are opened once, at the start.
-
-![Every burst of a 512 B sample, CCDS = 2](assets/bursts_512B_ccds2.png)
-
-**What it shows.** The same sample with `CCDS = 2`. A burst that started while
-another burst of the same pseudo-channel was still on its wires is drawn on a
-second row, and the red band is the time when the two shared them. Bursts of
-different pseudo-channels overlapping in time are normal and not marked. A red **S** is an overlapping
-spacing (0.5 or 0.75 ns).
-
-**What to take away.** Every overlap is an S, between two different bank
-groups; an L never drops below 1 ns. The overlaps come in two places:
-
-- **At the start**, the second copy arrives while the first is still being
-  served. With requests for several bank groups waiting, the controller
-  alternates them every 0.5 ns (bank groups 4, 7, 4, 7, 5, then 6): six
-  overlaps within 4 ns.
-- **Then once per copy**: the first burst of each copy starts 0.75 ns after the
-  previous burst, always going from bank group 7 to 4.
-
-The bus finishes 64 bursts in 59.5 ns instead of 64: that is the 67.4 GB/s of
-the `CCDS = 2` bus curve at 512 B.
-
-![Requests of a 512 B sample, CCDS = 4](assets/requests_512B_ccds4.png)
-
-**What it shows.** The 64 requests of pseudo-channel 0, in the order they reached
-the DRAM controller. Light grey: waiting in the controller. Dark grey: from the
-read command to the data (8 ns). Coloured: the burst. Each copy arrives as one
-block of eight requests per pseudo-channel.
-
-**What to take away.** A new copy arrives every 7.75 ns, but the bus needs 8 ns
-to serve one. The queue grows: the first request of each copy waits 3.0, 3.25,
-3.5, … 4.75 ns. The DRAM is the bottleneck.
-
-![Requests of a 512 B sample, CCDS = 2](assets/requests_512B_ccds2.png)
-
-**What to take away.** With `CCDS = 2` the controller empties the queue after the
-first copy: from the third copy on, the first request of each copy waits only
-0.25 ns. The bus is no longer the bottleneck. It waits for the requests, so it
-moves data as fast as they arrive.
-
-**This is why the `CCDS = 2` curve settles at 64.25 GB/s.** The requests reach
-the DRAM at exactly the same times in both runs: their rate is set by the
-cluster and the network, not by the DRAM, and it is above 64 GB/s.
+The requests reach the DRAM at the same times in both runs: their rate is set by
+the cluster and the network, and it is above 64 GB/s.
 
 | | 512 B copies | 4 KiB to 1 MiB copies |
 | --- | ---: | ---: |
-| Requests arrive | one copy every 7.75 ns | one 4 KiB block every 63.75 ns |
-| Request rate | 66.07 GB/s | 64.25 GB/s |
-| DRAM bus, `CCDS = 4` | 62.77 GB/s | 64.00 GB/s (1 MiB) |
-| DRAM bus, `CCDS = 2` | 67.42 GB/s | 64.25 GB/s (1 MiB) |
+| Requests arrive | one copy every 7.75 ns: 66.07 GB/s | 4 KiB every 63.75 ns: 64.25 GB/s |
+| DRAM bus, `CCDS = 4` | 62.77 GB/s | 64.00 GB/s |
+| DRAM bus, `CCDS = 2` | 67.42 GB/s | 64.25 GB/s |
 
-With `CCDS = 4` the DRAM cannot go above 64.00 GB/s, so the extra requests pile
-up in the controller (in the middle of a 1 MiB sample they wait 260–324 ns).
-With `CCDS = 2` the DRAM can go faster than the requests, so the bus follows
-them: it settles at the **request rate**, 64.25 GB/s, not at the bus peak.
-At 512 B the request rate is 66 GB/s, and the catch-up of the first copies in
-a sample that lasts only 61 ns adds the rest of the 67.4 GB/s.
-
-![A 1 MiB sample around an 8 KiB boundary, CCDS = 4](assets/bursts_1MiB_ccds4.png)
-
-**What it shows.** 4 KiB from the middle of a 1 MiB sample, 2 KiB either side of
-the address 4 MiB. Bank groups 0–3 and 4–7 share colours; the number tells them
-apart.
-
-**What to take away.** Every 8 KiB the addresses move from bank groups 4–7 to
-0–3 or back (address bit 13 is the top bank-group bit), and four new rows must
-be opened. With `CCDS = 4` the requests have been queued for over 260 ns, the
-rows are opened long before they are needed, and the boundary is invisible.
-
-![A 1 MiB sample around an 8 KiB boundary, CCDS = 2](assets/bursts_1MiB_ccds2.png)
-
-**What to take away.** With `CCDS = 2` the queue is short. The requests for the
-new rows arrive only when the bus is almost done with the old ones; opening a
-row and reading from it takes about 11 ns, so the bus stops for 2.5 ns. Then it
-catches up with S overlaps between the bank groups that are waiting.
-
-Over whole samples (both pseudo-channels, sample 0, from
-[spacing_ccds4.csv](assets/spacing_ccds4.csv) and
-[spacing_ccds2.csv](assets/spacing_ccds2.csv)):
-
-| Spacing | 512 B, `CCDS = 4` | 512 B, `CCDS = 2` | 1 MiB, `CCDS = 4` | 1 MiB, `CCDS = 2` |
-| --- | ---: | ---: | ---: | ---: |
-| L, 1 ns | 64 | 60 | 131072 | 123348 |
-| S, 1 ns | 62 | 42 | 131068 | 115057 |
-| S, 0.75 ns (overlap) | 0 | 12 | 0 | 2520 |
-| S, 0.5 ns (overlap) | 0 | 12 | 0 | 19094 |
-| S, 1.25 ns | 0 | 0 | 0 | 24 |
-| S, pause of 2.25–5.75 ns | 0 | 0 | 2 | 2099 |
-
-In a 1 MiB sample with `CCDS = 2`, 8.2% of the spacings overlap, and the 2099
-pauses, almost all at 8 KiB boundaries, give nearly all of it back. What is
-left is exactly the gap between the request rate and the bus peak:
-64.25 / 64 GB/s. With `CCDS = 4` nothing overlaps and only two pauses of
-2.25 ns remain, one per pseudo-channel. Together with pseudo-channel 1 starting
-1.25 ns after pseudo-channel 0, they are the 2.5 ns by which the bus window
-exceeds the bytes alone.
+With `CCDS = 4` the DRAM is the bottleneck: it cannot go above 64.00 GB/s, so
+the extra requests pile up in the controller. With `CCDS = 2` the DRAM can go
+faster than the requests, the queue empties, and the bus simply follows the
+request rate. At 512 B the bus also catches up, with overlaps, on the requests
+that queued while the first copy's rows were being opened: that adds the rest
+of the 67.4 GB/s. In a 1 MiB sample 8.2% of
+the burst spacings overlap; pauses where new rows must be opened (every 8 KiB
+of addresses) give nearly all of it back, leaving exactly the request rate.
+Full counts per sample and rule: [spacing_ccds4.csv](assets/spacing_ccds4.csv),
+[spacing_ccds2.csv](assets/spacing_ccds2.csv).
 
 ## Regenerate the figures
 
@@ -444,9 +335,8 @@ pulp/.venv/bin/python "$APP_DIR/plot.py"
 `time_breakdown.png` (from `dram.csv`); `ccds.png` (from `bandwidth_ccds2.csv`)
 and `ccds_bus.png` (from `dram_ccds2.csv`); `sequential_vs_pipelined.png`
 (with the sequential app's `assets/bandwidth.csv`;
-`--sequential DIR` points elsewhere); and `bursts_512B_ccds*.png`,
-`requests_512B_ccds*.png` and `bursts_1MiB_ccds*.png` (from `trace_ccds4.csv`
-and `trace_ccds2.csv`). For a new run,
+`--sequential DIR` points elsewhere); and `requests_512B_ccds4.png` and
+`requests_512B_ccds2.png` (from `trace_ccds4.csv` and `trace_ccds2.csv`). For a new run,
 `plot.py "$RUN_DIR"` reads `bandwidth.csv` and `dram.csv` there and writes the
 figures next to them (`--output-dir` changes this); figures whose CSVs are
 missing are skipped. All DRAM sweep figures share
