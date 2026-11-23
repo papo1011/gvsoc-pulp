@@ -13,7 +13,7 @@ from app_dram_bandwidth_pipelined.summarize import (
     measurements,
     offsets,
 )
-from app_dram_bandwidth_warm.summarize import plateau, summarize
+from dram_common.analysis import plateau, summarize
 
 
 def complete_log(rate=lambda size: 10):

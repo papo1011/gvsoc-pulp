@@ -3,7 +3,6 @@
 How does HBM distance affect scalar-load latency and DMA throughput on
 SoftHier v1? Only the DM core (last core) of cluster 0 runs. On the default 4×4
 mesh it compares channel 0 (`local`, 0 hops) with channel 15 (`far`, 6 hops).
-For the multi-cluster sweep, see [app_dram_multi](../app_dram_multi/README.md).
 
 > **Wide-port model.** The reference results use the asynchronous wide-port
 > arbiter. The earlier synchronous arbiter added about 104 ns to every 64 KiB

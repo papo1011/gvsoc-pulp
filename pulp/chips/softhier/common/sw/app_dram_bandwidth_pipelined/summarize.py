@@ -9,8 +9,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app_dram_bandwidth_warm.summarize import plateau, summarize
-from dram_common.analysis import require_success
+
+from dram_common.analysis import plateau, require_success, summarize
 
 NAME = "SoftHier pipelined DRAM bandwidth"
 PREFIX = "[dram-pipelined]"

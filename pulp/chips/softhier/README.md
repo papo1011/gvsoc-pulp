@@ -44,21 +44,13 @@
    pulp/pulp/chips/softhier/common/sw/app_example
    ```
 
-   Six HBM benchmarks are available:
+   Three HBM benchmarks are available:
 
    - [`app_dram`](common/sw/app_dram/README.md): single-cluster dependent reads
      and DMA copies to local and distant HBM.
-   - [`app_dram_multi`](common/sw/app_dram_multi/README.md): DMA with 2, 4, 8
-     and 16 clusters targeting local, distinct remote or shared HBM channels.
-   - [`app_dram_bandwidth_warm`](common/sw/app_dram_bandwidth_warm/README.md): one cluster
-     reading local HBM, doubling DMA sizes from 4 bytes to 512 KiB to find a
-     bandwidth plateau and compare against the nominal single-channel peak.
    - [`app_dram_bandwidth_sequential`](common/sw/app_dram_bandwidth_sequential/README.md):
-     the same bandwidth sweep with distinct consecutive blocks, no read warm-up
-     and sizes up to 1 MiB.
-   - [`app_dram_bandwidth_tiled`](common/sw/app_dram_bandwidth_tiled/README.md):
-     datasets from 512 to 2048 KiB, with extra points around the 1 MiB TCDM
-     limit to measure the cost of a small final DMA copy.
+     one cluster reading local HBM, one DMA copy at a time, doubling the size
+     from 4 B to 1 MiB to find the bandwidth plateau.
    - [`app_dram_bandwidth_pipelined`](common/sw/app_dram_bandwidth_pipelined/README.md):
      contiguous reads from 4 B to 1 MiB with eight DMA copies in flight, to
      find the sustained read plateau, with DRAM-bus vs end-to-end figures.
@@ -67,12 +59,9 @@
 
    ```bash
    make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram
-   # Or build the multi-cluster benchmark:
-   make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_multi
-   # Or build the single-cluster bandwidth size sweep:
-   make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_warm
-   # Or its sequential variant:
+   # Or the single-cluster bandwidth sweeps:
    make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_sequential
+   make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_pipelined
    ```
 
    Without `app=...`, `sh-sw` builds `app_example`. All DRAM apps initialize

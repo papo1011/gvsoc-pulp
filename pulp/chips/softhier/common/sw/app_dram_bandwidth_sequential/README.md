@@ -14,23 +14,20 @@ the other. (This app was called `app_dram_bandwidth_streaming` until
 > configuration's `CCDS = 2` lets bursts overlap on the data bus and exceed
 > 64 GB/s (see the [pipelined guide](../app_dram_bandwidth_pipelined/README.md#why-ccds--2-exceeded-64-gbs)).
 
-## Sequential vs warm
+## What a sample does
 
-The [warm app](../app_dram_bandwidth_warm/README.md) uses the same firmware
-with two differences, for a block of `N` bytes:
+For a copy of `N` bytes, a sample reads eight consecutive blocks starting at a
+fresh address `A`, waiting for each copy before issuing the next:
 
 ```text
-Sequential:  no read warm-up; time A, A+N, A+2N, ..., A+7N
-Warm:       read A once outside the timer, then time A, A, A, ..., A
+time A, A+N, A+2N, ..., A+7N   (one copy in flight)
 ```
 
-Every sequential sample reads a distinct source window. Both apps reuse one TCDM
-buffer and wait for each DMA copy before starting the next. No warm-up does not
-mean closed rows: consecutive blocks can still hit open rows. With the
-synchronous arbiter the two apps differed by about 0.1% at 64 KiB (56.080 vs
-56.140 GB/s): for large blocks moving the bytes dominates. Since both warm-up
-and addresses change, this comparison does not isolate row effects. The warm
-sweep has not been re-measured with the asynchronous arbiter.
+Every sample reads its own source window, so no block is read twice, and all
+copies land in the same TCDM buffer. Fresh addresses do not mean closed rows:
+consecutive blocks can still hit open rows. The
+[pipelined app](../app_dram_bandwidth_pipelined/README.md) reads the same kind
+of blocks but keeps eight copies in flight.
 
 ## What is timed
 
@@ -41,7 +38,7 @@ Untimed DMA writes fill the source with a pattern and tag each block with its
 address; a 100 µs wait lets them drain before measuring. After timing, the
 buffer is checked against the last block. Up to 512 KiB, copies land at TCDM
 offset `0x20000`; the 1 MiB copy uses the whole TCDM (the app has no persistent
-`.l1` data and rejects it at runtime). Buffer layout: [bandwidth.h](../dram_common/bandwidth.h).
+`.l1` data and rejects it at runtime). Buffer layout: [bandwidth.h](bandwidth.h).
 
 ## Build and run
 
@@ -54,7 +51,6 @@ points to, set `"CCDS": 4` in `memspec/HBM4-emulation-4000.json`, and export
 ```bash
 set -e
 APP_DIR="$PWD/pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_sequential"
-ANALYSIS_DIR="$PWD/pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_warm"
 make sh-hw TOPOLOGY=2d_mesh
 make sh-sw TOPOLOGY=2d_mesh app="$APP_DIR"
 mkdir -p .local-artifacts/dram-bandwidth-sequential
@@ -62,7 +58,7 @@ RUN_DIR="$(mktemp -d "$PWD/.local-artifacts/dram-bandwidth-sequential/run.XXXXXX
 cp sw_build/softhier.elf "$RUN_DIR/softhier.elf"
 make sh-run TOPOLOGY=2d_mesh SH_TRACE_ARGS= RUN_ARGS="--work-dir=$RUN_DIR" \
     > "$RUN_DIR/simulation.log" 2>&1
-python3 "$ANALYSIS_DIR/summarize.py" "$RUN_DIR/simulation.log" \
+python3 "$APP_DIR/summarize.py" "$RUN_DIR/simulation.log" \
     --report "$RUN_DIR/report.md" > "$RUN_DIR/bandwidth.csv"
 ```
 
@@ -71,13 +67,18 @@ A valid run ends with `[dram-bandwidth] errors=0` and
 `DatabaseRecording: true` in DRAMSys you can also extract physical DRAM traffic:
 
 ```bash
-python3 "$ANALYSIS_DIR/query_dram.py" "$RUN_DIR/simulation.log" "$RUN_DIR" \
+python3 "$APP_DIR/query_dram.py" "$RUN_DIR/simulation.log" "$RUN_DIR" \
     > "$RUN_DIR/dram.csv"
 ```
 
 Each sweep with recording writes 2–4 GB of databases; delete the `.tdb` files
-once `dram.csv` exists. The plateau criterion and the 64 GB/s reference are
-described in the [warm guide](../app_dram_bandwidth_warm/README.md#reading-the-results).
+once `dram.csv` exists.
+
+**Plateau and reference.** The summary finds a plateau when the last three size
+medians differ by at most 3%; its onset is the first size from which every
+median stays within 5% of the maximum. The reference is **64 GB/s**, the
+nominal bus bandwidth of one HBM channel (two 32-bit pseudo-channels at
+8 Gbit/s per pin); `--peak-gbps` changes it.
 
 ## Results
 

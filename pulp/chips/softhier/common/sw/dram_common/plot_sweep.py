@@ -24,7 +24,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_dram_bandwidth_warm.summarize import plateau
+from dram_common.analysis import plateau
 
 PEAK_GB_PER_S = 64.0
 FIRST_BYTES, LAST_BYTES = 4, 1 << 20

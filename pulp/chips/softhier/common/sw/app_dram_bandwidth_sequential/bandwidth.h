@@ -2,9 +2,15 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 
+// The sequential sweep: eight consecutive blocks per sample, each copy awaited
+// before the next. main.cpp sets BANDWIDTH_SEQUENTIAL to 1. The branches for 0
+// are the retired "warm" mode (one block reread); they are kept unchanged so
+// the binary stays identical to the one that produced assets/ (removing them
+// changes register allocation, which shifts small-copy timings by a few ns).
+
 #pragma once
 
-#include "dma.h"
+#include "../dram_common/dma.h"
 
 #define PRINTF_DISABLE_SUPPORT_LONG_LONG
 #include "softhier_printf.h"

@@ -1,4 +1,4 @@
-"""Shared CSV and DRAMSys analysis for the two HBM benchmarks."""
+"""Shared CSV and DRAMSys analysis for the HBM benchmarks."""
 
 import argparse
 import csv
@@ -6,6 +6,7 @@ import sqlite3
 import sys
 from contextlib import ExitStack, closing
 from pathlib import Path
+from statistics import median
 
 
 def require_success(log, name="SoftHier DRAM", prefix="[dram]"):
@@ -101,36 +102,64 @@ def query_measurements(fields, measurements, directory):
     return results
 
 
-def summarize_main(fields, measurements, aggregate=None, aggregate_fields=()):
+def summarize(rows, peak):
+    """One point per size: median, min and max bandwidth of its samples."""
+    result = []
+    for size in sorted({row["bytes"] for row in rows}):
+        workers = [row for row in rows if row["bytes"] == size]
+        rates = [payload_bytes(row) / row["total_ns"] for row in workers]
+        rate = median(rates)
+        result.append(
+            {
+                "bytes": size,
+                "samples": len(workers),
+                "repetitions": workers[0]["repetitions"],
+                "median_ns_per_transfer": median(
+                    row["total_ns"] / row["repetitions"] for row in workers
+                ),
+                "median_GB_per_s": rate,
+                "min_GB_per_s": min(rates),
+                "max_GB_per_s": max(rates),
+                "nominal_peak_GB_per_s": peak,
+                "nominal_utilization_percent": 100 * rate / peak,
+            }
+        )
+    return result
+
+
+def plateau(curve):
+    """Require stability at the largest sizes; a transient flat spot is not enough.
+
+    The last three medians must span at most 3%. The onset is the earliest size
+    whose entire remaining suffix stays within 5% of the maximum median rate.
+    This describes size saturation for this access pattern, not hardware proof.
+    """
+    rates = [row["median_GB_per_s"] for row in curve]
+    if len(rates) < 3 or max(rates[-3:]) / min(rates[-3:]) > 1.03:
+        return None
+    threshold = max(rates) * 0.95
+    for index in range(len(curve) - 2):
+        if min(rates[index:]) >= threshold:
+            return curve[index]["bytes"]
+    return None
+
+
+def summarize_main(fields, measurements):
     parser = argparse.ArgumentParser(description="Summarize HBM benchmark measurements")
     parser.add_argument("log", type=Path)
-    if aggregate is not None:
-        parser.add_argument(
-            "--aggregate", action="store_true", help="report one row per concurrent case"
-        )
     args = parser.parse_args()
     try:
         rows = measurements(args.log.read_text())
-        if getattr(args, "aggregate", False):
-            header = (
-                *aggregate_fields,
-                "total_ns",
-                "payload_GB_per_s",
-                "start_skew_ns",
-                "slowest_cluster_ns",
+        header = (*fields, "total_ns", "ns_per_operation", "payload_GB_per_s")
+        output = [
+            (
+                *(row[field] for field in fields),
+                f"{row['total_ns']:.3f}",
+                f"{row['total_ns'] / int(row['repetitions']):.3f}",
+                f"{payload_bytes(row) / row['total_ns']:.6f}",
             )
-            output = list(aggregate(rows))
-        else:
-            header = (*fields, "total_ns", "ns_per_operation", "payload_GB_per_s")
-            output = [
-                (
-                    *(row[field] for field in fields),
-                    f"{row['total_ns']:.3f}",
-                    f"{row['total_ns'] / int(row['repetitions']):.3f}",
-                    f"{payload_bytes(row) / row['total_ns']:.6f}",
-                )
-                for row in rows
-            ]
+            for row in rows
+        ]
     except (OSError, ValueError, KeyError) as error:
         parser.exit(1, f"{error}\n")
     writer = csv.writer(sys.stdout)
