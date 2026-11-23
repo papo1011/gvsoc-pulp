@@ -3,7 +3,7 @@
 What is the highest read bandwidth one cluster sustains from its local HBM
 channel? The DM core of cluster 0 reads contiguous blocks from HBM 0 into TCDM,
 with block sizes doubling from **4 B to 1 MiB**, the same range as the
-[streaming sweep](../app_dram_bandwidth_streaming/README.md): 19 sizes, three
+[sequential sweep](../app_dram_bandwidth_sequential/README.md): 19 sizes, three
 samples each, 57 measurements.
 
 > **Simulator setup.** These results use the asynchronous wide-port arbiter and
@@ -11,10 +11,10 @@ samples each, 57 measurements.
 > DRAMSys configuration's `CCDS = 2` lets bursts overlap on the data bus and
 > exceed 64 GB/s (see [Why `CCDS = 2` exceeded 64 GB/s](#why-ccds--2-exceeded-64-gbs)).
 
-## What differs from the streaming sweep
+## What differs from the sequential sweep
 
 Each sample issues eight consecutive blocks back to back and waits once, so
-the DMA always has the next copy queued. The streaming app waits after every
+the DMA always has the next copy queued. The sequential app waits after every
 copy, which leaves the DMA idle for the latency of each one. Every sample reads
 its own consecutive window, starting at 4 MiB in channel 0, so no block is read
 twice; windows start on a 32 B DRAM burst.
@@ -94,10 +94,10 @@ match the earlier run of this app, which stopped at 512 KiB, except 128 B
 
 ### One copy at a time vs eight in flight
 
-![Streaming vs pipelined reads](assets/streaming_vs_pipelined.png)
+![Sequential vs pipelined reads](assets/sequential_vs_pipelined.png)
 
 **What it shows.** The same reads done two ways. Blue: the
-[streaming sweep](../app_dram_bandwidth_streaming/README.md) waits for each
+[sequential sweep](../app_dram_bandwidth_sequential/README.md) waits for each
 copy before starting the next. Orange: this sweep queues eight copies and
 waits once.
 
@@ -105,7 +105,7 @@ waits once.
 curve gets there much earlier. The difference is not bandwidth, it is how
 much waiting the cluster does.
 
-![Pipelined over streaming bandwidth](assets/pipelined_speedup.png)
+![Pipelined over sequential bandwidth](assets/pipelined_speedup.png)
 
 **What it shows.** How many times faster the pipelined sweep is, size by size
 (1.0 means the same speed).
@@ -114,7 +114,7 @@ much waiting the cluster does.
 1.6× at 4 KiB. From 64 KiB up the gain is below 4%, because a single large
 copy already keeps the DRAM busy on its own.
 
-| Block | Streaming | Pipelined | Pipelined / streaming |
+| Block | Sequential | Pipelined | Pipelined / sequential |
 | ---: | ---: | ---: | ---: |
 | 256 B | 7.19 GB/s | 25.92 GB/s | 3.6× |
 | 1 KiB | 20.23 GB/s | 47.35 GB/s | 2.3× |
@@ -178,7 +178,7 @@ window (request going out, data coming back).
 the DRAM never waits for the next request (at most 3.3 ns per sample). For
 large blocks the green covers practically everything; for small blocks the
 purple fixed latency dominates (more than half the time up to 256 B). Compare
-it with the [streaming breakdown](../app_dram_bandwidth_streaming/README.md#dram-bandwidth-vs-what-the-cluster-sees),
+it with the [sequential breakdown](../app_dram_bandwidth_sequential/README.md#dram-bandwidth-vs-what-the-cluster-sees),
 where a large yellow area shows the DRAM waiting for the cluster between copies.
 
 ## Why `CCDS = 2` exceeded 64 GB/s
@@ -245,9 +245,9 @@ pulp/.venv/bin/python "$APP_DIR/plot.py"
 `plot.py` reads the CSVs in `assets/` and redraws, one chart per image,
 `bandwidth.png`; `dram_vs_end_to_end.png`, `fixed_cost.png` and
 `time_breakdown.png` (from `dram.csv`); `ccds.png` (from `bandwidth_ccds2.csv`)
-and `ccds_bus.png` (from `dram_ccds2.csv`); and `streaming_vs_pipelined.png`
-and `pipelined_speedup.png` (with the streaming app's `assets/bandwidth.csv`;
-`--streaming DIR` points elsewhere). For a new run,
+and `ccds_bus.png` (from `dram_ccds2.csv`); and `sequential_vs_pipelined.png`
+and `pipelined_speedup.png` (with the sequential app's `assets/bandwidth.csv`;
+`--sequential DIR` points elsewhere). For a new run,
 `plot.py "$RUN_DIR"` reads `bandwidth.csv` and `dram.csv` there and writes the
 figures next to them (`--output-dir` changes this); figures whose CSVs are
 missing are skipped. All DRAM sweep figures share

@@ -6,23 +6,23 @@ DM core of cluster 0 reads local HBM 0 into TCDM. Sizes double from **4 B to
 
 > **Not re-measured.** These results come from the synchronous wide-port
 > arbiter, whose modeling artifact caps copies above 4 KiB at ~57.9 GB/s. With
-> the asynchronous arbiter now in use and DRAMSys `CCDS = 4`, the streaming sweep
-> reaches 63.79 GB/s at 1 MiB; re-run this sweep before comparing. See the [explanation](../app_dram_bandwidth_streaming/README.md#wide-port-arbiter-model).
+> the asynchronous arbiter now in use and DRAMSys `CCDS = 4`, the sequential sweep
+> reaches 63.79 GB/s at 1 MiB; re-run this sweep before comparing. See the [explanation](../app_dram_bandwidth_sequential/README.md#wide-port-arbiter-model).
 
-## Warm vs streaming
+## Warm vs sequential
 
-The [streaming app](../app_dram_bandwidth_streaming/README.md) uses the same
+The [sequential app](../app_dram_bandwidth_sequential/README.md) uses the same
 firmware with two differences, for a block of `N` bytes:
 
 ```text
 Warm:       read A once outside the timer, then time A, A, A, ..., A
-Streaming:  no read warm-up; time A, A+N, A+2N, ..., A+7N
+Sequential:  no read warm-up; time A, A+N, A+2N, ..., A+7N
 ```
 
 The warm-up runs before every sample and may leave useful DRAM rows open, but a
 large block spans many rows, so the start may need reopening. At 64 KiB the two
 apps differ by about 0.1% (56.140 vs 56.080 GB/s). Use warm reads for repeated
-data and streaming for successive data.
+data and sequential for successive data.
 
 ## What is timed
 
@@ -78,7 +78,7 @@ the light band is the min–max of the three samples. The dotted curve is the
 model `N / (alpha + N/B)` fitted with `T(N) = alpha + N/B` on 64/128/256 KiB:
 `alpha = 35.375 ns`, `B = 57.894 GB/s`, matching the excluded 512 KiB point. This limit is the
 synchronous wide-port artifact (see the note above); the fit is explained in the
-[streaming guide](../app_dram_bandwidth_streaming/README.md#how-the-asymptote-is-calculated).
+[sequential guide](../app_dram_bandwidth_sequential/README.md#how-the-asymptote-is-calculated).
 
 To regenerate the figure:
 

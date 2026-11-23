@@ -53,7 +53,7 @@
    - [`app_dram_bandwidth_warm`](common/sw/app_dram_bandwidth_warm/README.md): one cluster
      reading local HBM, doubling DMA sizes from 4 bytes to 512 KiB to find a
      bandwidth plateau and compare against the nominal single-channel peak.
-   - [`app_dram_bandwidth_streaming`](common/sw/app_dram_bandwidth_streaming/README.md):
+   - [`app_dram_bandwidth_sequential`](common/sw/app_dram_bandwidth_sequential/README.md):
      the same bandwidth sweep with distinct consecutive blocks, no read warm-up
      and sizes up to 1 MiB.
    - [`app_dram_bandwidth_tiled`](common/sw/app_dram_bandwidth_tiled/README.md):
@@ -71,8 +71,8 @@
    make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_multi
    # Or build the single-cluster bandwidth size sweep:
    make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_warm
-   # Or its streaming variant:
-   make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_streaming
+   # Or its sequential variant:
+   make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_sequential
    ```
 
    Without `app=...`, `sh-sw` builds `app_example`. All DRAM apps initialize

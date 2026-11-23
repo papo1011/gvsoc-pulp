@@ -1,4 +1,3 @@
-
 import argparse
 import json
 import subprocess
@@ -25,6 +24,7 @@ def generate(config_path, output_dir):
 
     if config["dtype"] == "fp8":
         import ml_dtypes
+
         # Specify the exact FP8 encoding used by the kernel in benchmark.json.
         dtype = np.dtype(getattr(ml_dtypes, "float8_" + config["fp8_format"]))
     else:
@@ -67,9 +67,7 @@ def generate(config_path, output_dir):
             f.truncate(offset)
 
             for name in ("A", "B"):
-                values = rng.uniform(
-                    -100, 100, size=shapes[name]
-                ).astype(dtype)
+                values = rng.uniform(-100, 100, size=shapes[name]).astype(dtype)
 
                 f.seek(matrices[name]["offset"])
                 f.write(values.tobytes())
@@ -83,30 +81,29 @@ def generate(config_path, output_dir):
         phdr = f"matrix_{cid:02d}"
         address = HBM_BASE + cid * CHANNEL_SIZE + a_start
 
-        subprocess.run([
-            "riscv32-unknown-elf-objcopy",
-            "-I", "binary",
-            "-O", "elf32-littleriscv",
-            "-B", "riscv",
-            "--rename-section",
-            f".data={section},alloc,load,readonly,data,contents",
-            str(payload_path),
-            str(object_path),
-        ], check=True)
-
-        phdrs.append(f"  {phdr} PT_LOAD;")
-        sections.append(
-            f"  {section} 0x{address:08X} : "
-            f"{{ KEEP(*({section})) }} :{phdr}"
+        subprocess.run(
+            [
+                "riscv32-unknown-elf-objcopy",
+                "-I",
+                "binary",
+                "-O",
+                "elf32-littleriscv",
+                "-B",
+                "riscv",
+                "--rename-section",
+                f".data={section},alloc,load,readonly,data,contents",
+                str(payload_path),
+                str(object_path),
+            ],
+            check=True,
         )
 
-    (output_dir / "hbm_phdrs.ld").write_text(
-        "\n".join(phdrs) + "\n"
-    )
+        phdrs.append(f"  {phdr} PT_LOAD;")
+        sections.append(f"  {section} 0x{address:08X} : {{ KEEP(*({section})) }} :{phdr}")
 
-    (output_dir / "hbm_sections.ld").write_text(
-        "\n".join(sections) + "\n"
-    )
+    (output_dir / "hbm_phdrs.ld").write_text("\n".join(phdrs) + "\n")
+
+    (output_dir / "hbm_sections.ld").write_text("\n".join(sections) + "\n")
 
     layout = {
         "dimensions": {"M": M, "N": N, "K": K},
@@ -117,9 +114,7 @@ def generate(config_path, output_dir):
         "matrices": matrices,
     }
 
-    (output_dir / "layout.json").write_text(
-        json.dumps(layout, indent=2) + "\n"
-    )
+    (output_dir / "layout.json").write_text(json.dumps(layout, indent=2) + "\n")
 
     header = f"""\
 #pragma once

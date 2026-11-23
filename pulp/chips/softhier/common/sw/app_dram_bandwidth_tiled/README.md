@@ -2,11 +2,11 @@
 
 Does bandwidth dip just above the cluster's **1 MiB TCDM**? Cluster 0 reads
 datasets from local HBM 0, split into DMA copies that fit in TCDM, with the same
-hardware and DRAM timings as the [streaming benchmark](../app_dram_bandwidth_streaming/README.md).
+hardware and DRAM timings as the [sequential benchmark](../app_dram_bandwidth_sequential/README.md).
 
 > **Not re-measured.** These results come from the synchronous wide-port
 > arbiter, whose modeling artifact costs about 7 ns per 4 KiB burst; see the
-> [explanation](../app_dram_bandwidth_streaming/README.md#wide-port-arbiter-model). The dip comes from the extra DMA copy, so it should
+> [explanation](../app_dram_bandwidth_sequential/README.md#wide-port-arbiter-model). The dip comes from the extra DMA copy, so it should
 > persist with the asynchronous arbiter now in use, but absolute values and the
 > size of the dip will change.
 

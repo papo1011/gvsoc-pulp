@@ -10,15 +10,15 @@
 #include "softhier_printf.h"
 
 static constexpr uint32_t FIRST_BYTES = 4;
-static constexpr uint32_t LAST_BYTES = BANDWIDTH_STREAMING ? 1024 * 1024 : 512 * 1024;
+static constexpr uint32_t LAST_BYTES = BANDWIDTH_SEQUENTIAL ? 1024 * 1024 : 512 * 1024;
 static constexpr uint32_t SAMPLES = 3;
 static constexpr uint32_t READ_BUFFER = local(0x20000);
-static constexpr uint32_t STREAM_START = 32 * 1024 * 1024;
+static constexpr uint32_t SEQUENTIAL_START = 32 * 1024 * 1024;
 static constexpr uint32_t FULL_TCDM_SOURCE = 8 * 1024 * 1024;
-// Each streaming sample gets fresh addresses, including across transfer sizes.
+// Each sequential sample gets fresh addresses, including across transfer sizes.
 // Keep the original windows above 32 MiB; the three 1 MiB samples use 8..32 MiB.
 static constexpr uint32_t REGION_BYTES =
-    BANDWIDTH_STREAMING ? ARCH_HBM_NODE_ADDR_SPACE - FULL_TCDM_SOURCE : LAST_BYTES;
+    BANDWIDTH_SEQUENTIAL ? ARCH_HBM_NODE_ADDR_SPACE - FULL_TCDM_SOURCE : LAST_BYTES;
 static constexpr uint32_t HBM_OFFSET = ARCH_HBM_NODE_ADDR_SPACE - REGION_BYTES;
 static constexpr uint32_t HBM_BUFFER = ARCH_HBM_START_BASE + HBM_OFFSET;
 static_assert(0x20000 + 512 * 1024 < ARCH_CLUSTER_TCDM_SIZE - 16,
@@ -41,7 +41,7 @@ static uint32_t destination_buffer(uint32_t bytes)
 // Align each sample without overlapping another sample's physical source window.
 static uint32_t align_window(uint32_t cursor, uint32_t bytes)
 {
-    if (bytes == 1024 * 1024 && cursor >= STREAM_START)
+    if (bytes == 1024 * 1024 && cursor >= SEQUENTIAL_START)
         cursor = FULL_TCDM_SOURCE;
     const uint32_t alignment = bytes < 32 ? 32 : bytes;
     return (cursor + alignment - 1) & ~(alignment - 1);
@@ -52,24 +52,24 @@ static uint32_t block_tag(uint32_t offset)
     return pattern(offset / sizeof(uint32_t)) ^ 0xa5a5a5a5u;
 }
 
-// Streaming initialization repeats one staging pattern using DMA, then tags
+// Sequential initialization repeats one staging pattern using DMA, then tags
 // every logical source block. This avoids a CPU loop over the entire HBM area
 // while still detecting an incorrect final source address during validation.
 static void initialize_hbm()
 {
     volatile uint32_t *source = (volatile uint32_t *)SRC;
-    if (BANDWIDTH_STREAMING)
+    if (BANDWIDTH_SEQUENTIAL)
         fill_source(0);
     for (uint32_t offset = 0; offset < REGION_BYTES; offset += MAX_BYTES)
     {
-        if (!BANDWIDTH_STREAMING)
+        if (!BANDWIDTH_SEQUENTIAL)
             for (uint32_t i = 0; i < MAX_BYTES / sizeof(uint32_t); ++i)
                 source[i] = pattern(offset / sizeof(uint32_t) + i);
         copy(HBM_BUFFER + offset, SRC, MAX_BYTES);
     }
-    if (BANDWIDTH_STREAMING)
+    if (BANDWIDTH_SEQUENTIAL)
     {
-        uint32_t cursor = BANDWIDTH_STREAMING ? STREAM_START : HBM_OFFSET;
+        uint32_t cursor = BANDWIDTH_SEQUENTIAL ? SEQUENTIAL_START : HBM_OFFSET;
         for (uint32_t bytes = FIRST_BYTES; bytes <= LAST_BYTES; bytes *= 2)
             for (uint32_t sample = 0; sample < SAMPLES; ++sample)
             {
@@ -93,7 +93,7 @@ static uint32_t measure(uint32_t bytes, uint32_t sample, uint32_t offset)
     for (uint32_t i = 0; i < bytes / sizeof(uint32_t); ++i)
         destination[i] = ~pattern(i);
     uint32_t errors = 0;
-    if (!BANDWIDTH_STREAMING)
+    if (!BANDWIDTH_SEQUENTIAL)
     {
         // The original mode intentionally measures repeated, warmed addresses.
         copy(target, address, bytes);
@@ -104,21 +104,21 @@ static uint32_t measure(uint32_t bytes, uint32_t sample, uint32_t offset)
     // several internal requests in flight. Timing includes issue and wait costs.
     const uint64_t start = flex_time_ps();
     for (uint32_t repetition = 0; repetition < REPEATS; ++repetition)
-        copy(target, address + (BANDWIDTH_STREAMING ? repetition * bytes : 0), bytes);
+        copy(target, address + (BANDWIDTH_SEQUENTIAL ? repetition * bytes : 0), bytes);
     const uint64_t end = flex_time_ps();
     // Only the final block remains in the reused destination. Its absolute
     // source index detects stale data or accidentally rereading the first block.
     const uint32_t word =
-        (offset - HBM_OFFSET + (BANDWIDTH_STREAMING ? (REPEATS - 1) * bytes : 0)) /
+        (offset - HBM_OFFSET + (BANDWIDTH_SEQUENTIAL ? (REPEATS - 1) * bytes : 0)) /
         sizeof(uint32_t);
     const uint32_t expected_first =
-        BANDWIDTH_STREAMING ? block_tag(offset + (REPEATS - 1) * bytes) : pattern(word);
+        BANDWIDTH_SEQUENTIAL ? block_tag(offset + (REPEATS - 1) * bytes) : pattern(word);
     errors += check(target, bytes, expected_first, 0, word,
-                    BANDWIDTH_STREAMING ? MAX_BYTES / sizeof(uint32_t) - 1 : 0xffffffffu);
+                    BANDWIDTH_SEQUENTIAL ? MAX_BYTES / sizeof(uint32_t) - 1 : 0xffffffffu);
     printf("[dram-bandwidth] cluster=0 channel=0 operation=dma_read bytes=%u "
            "repetitions=%u sample=%u pattern=%s hbm_offset=%u "
            "start_ps=0x%08x%08x end_ps=0x%08x%08x errors=%u\n",
-           bytes, REPEATS, sample, BANDWIDTH_STREAMING ? "streaming" : "warm", offset,
+           bytes, REPEATS, sample, BANDWIDTH_SEQUENTIAL ? "sequential" : "warm", offset,
            (uint32_t)(start >> 32), (uint32_t)start, (uint32_t)(end >> 32), (uint32_t)end, errors);
     return errors;
 }
@@ -139,7 +139,7 @@ static int run_bandwidth_sweep()
     }
     printf("[dram-bandwidth] max_bytes=%u\n", LAST_BYTES);
     initialize_hbm();
-    if (BANDWIDTH_STREAMING)
+    if (BANDWIDTH_SEQUENTIAL)
     {
         // Give posted initialization writes time to drain without reading any
         // measured source. The database audit must confirm no setup WR overlaps.
@@ -149,12 +149,12 @@ static int run_bandwidth_sweep()
         }
     }
     uint32_t errors = 0;
-    uint32_t cursor = BANDWIDTH_STREAMING ? STREAM_START : HBM_OFFSET;
+    uint32_t cursor = BANDWIDTH_SEQUENTIAL ? SEQUENTIAL_START : HBM_OFFSET;
     for (uint32_t bytes = FIRST_BYTES; bytes <= LAST_BYTES; bytes *= 2)
         for (uint32_t sample = 0; sample < SAMPLES; ++sample)
         {
             cursor = align_window(cursor, bytes);
-            const uint32_t span = BANDWIDTH_STREAMING ? REPEATS * bytes : bytes;
+            const uint32_t span = BANDWIDTH_SEQUENTIAL ? REPEATS * bytes : bytes;
             if ((uint64_t)cursor + span > (uint64_t)HBM_OFFSET + REGION_BYTES)
             {
                 printf("SoftHier DRAM bandwidth: FAILED (source allocation)\n");
@@ -162,7 +162,7 @@ static int run_bandwidth_sweep()
                 return 1;
             }
             errors += measure(bytes, sample, cursor);
-            if (BANDWIDTH_STREAMING)
+            if (BANDWIDTH_SEQUENTIAL)
                 cursor += span;
         }
     printf("[dram-bandwidth] errors=%u\n", errors);

@@ -31,7 +31,7 @@ FIRST_BYTES, LAST_BYTES = 4, 1 << 20
 TICKS = [4**power for power in range(1, 11)]  # 4 B, 16 B, ..., 1 MiB
 XLIM = (FIRST_BYTES / 1.4, LAST_BYTES * 1.4)
 
-STREAMING = "#2a78d6"
+SEQUENTIAL = "#2a78d6"
 PIPELINED = "#eb6834"
 DRAM = "#1baf7a"
 IDLE = "#eda100"

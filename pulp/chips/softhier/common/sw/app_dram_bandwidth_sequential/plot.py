@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draw the streaming sweep's figures, one chart per image, from the CSVs in a directory.
+"""Draw the sequential sweep's figures, one chart per image, from the CSVs in a directory.
 
   bandwidth.png           end-to-end bandwidth, fitted latency-bandwidth model
   dram_vs_end_to_end.png  DRAM data-bus vs end-to-end bandwidth (needs dram.csv)
@@ -19,7 +19,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from dram_common import plot_sweep as plot
 
-LABEL = "streaming (one copy in flight)"
+LABEL = "sequential (one copy in flight)"
 CONFIGURATION = "asynchronous router, tCCD_S = 4"
 
 
@@ -43,8 +43,8 @@ def main():
     plot.bandwidth_figure(
         curve,
         out / "bandwidth.png",
-        f"Single cluster, local HBM: streaming DMA reads ({CONFIGURATION})",
-        plot.STREAMING,
+        f"Single cluster, local HBM: sequential DMA reads ({CONFIGURATION})",
+        plot.SEQUENTIAL,
         f"End to end, {LABEL}, median and min-max of 3",
         with_fit=True,
     )
@@ -56,30 +56,30 @@ def main():
             curve,
             samples,
             out / "dram_vs_end_to_end.png",
-            f"Streaming reads: DRAM data bus vs end to end ({CONFIGURATION})",
-            plot.STREAMING,
+            f"Sequential reads: DRAM data bus vs end to end ({CONFIGURATION})",
+            plot.SEQUENTIAL,
             LABEL,
         )
         plot.fixed_cost_figure(
             samples,
             out / "fixed_cost.png",
-            f"Streaming reads: time outside the DRAM bus window ({CONFIGURATION})",
+            f"Sequential reads: time outside the DRAM bus window ({CONFIGURATION})",
         )
         plot.breakdown_figure(
             samples,
             out / "time_breakdown.png",
-            f"Streaming reads: where the time of a sample goes ({CONFIGURATION})",
+            f"Sequential reads: where the time of a sample goes ({CONFIGURATION})",
         )
     older = [data / "bandwidth_sync_router_ccds2.csv", data / "bandwidth_ccds2.csv"]
     if all(path.exists() for path in older):
         plot.comparison_figure(
             [
-                ("Final: asynchronous router, tCCD_S = 4", curve, plot.STREAMING, "o"),
+                ("Final: asynchronous router, tCCD_S = 4", curve, plot.SEQUENTIAL, "o"),
                 ("Asynchronous router, tCCD_S = 2", plot.load_curve(older[1]), plot.OLDER[0], "s"),
                 ("Synchronous router, tCCD_S = 2", plot.load_curve(older[0]), plot.OLDER[1], "^"),
             ],
             out / "simulator_fixes.png",
-            "Streaming reads before and after each simulator fix",
+            "Sequential reads before and after each simulator fix",
         )
 
 

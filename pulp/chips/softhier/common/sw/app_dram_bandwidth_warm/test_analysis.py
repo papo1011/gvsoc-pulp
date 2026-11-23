@@ -52,7 +52,7 @@ class BandwidthAnalysisTest(unittest.TestCase):
             with self.subTest(broken=broken[:200]), self.assertRaises(ValueError):
                 measurements(broken)
 
-    def test_streaming_offsets_are_distinct_and_query_covers_all_eight_blocks(self):
+    def test_sequential_offsets_are_distinct_and_query_covers_all_eight_blocks(self):
         lines = log_for_sweep().splitlines()
         cursor = 0x02000000
         for index, (size, sample) in enumerate(
@@ -61,7 +61,7 @@ class BandwidthAnalysisTest(unittest.TestCase):
             alignment = max(size, 32)
             cursor = (cursor + alignment - 1) & ~(alignment - 1)
             lines[index] = lines[index].replace(
-                f"hbm_offset={0x04000000 - SIZES[-1]}", f"pattern=streaming hbm_offset={cursor}"
+                f"hbm_offset={0x04000000 - SIZES[-1]}", f"pattern=sequential hbm_offset={cursor}"
             )
             cursor += 8 * size
         rows = measurements("\n".join(lines))
@@ -71,9 +71,9 @@ class BandwidthAnalysisTest(unittest.TestCase):
         for first, second in zip(ordered, ordered[1:]):
             self.assertLessEqual(first["hbm_offset"] + first["hbm_span"], second["hbm_offset"])
         with self.assertRaises(ValueError):
-            measurements("\n".join(lines).replace("pattern=streaming", "pattern=invalid", 1))
+            measurements("\n".join(lines).replace("pattern=sequential", "pattern=invalid", 1))
 
-    def test_database_query_includes_the_last_streaming_block(self):
+    def test_database_query_includes_the_last_sequential_block(self):
         row = dict(
             channel=0,
             operation="dma_read",
@@ -126,7 +126,7 @@ class BandwidthAnalysisTest(unittest.TestCase):
                 start = (len(lines) + 1) * 2000000000
                 lines.append(
                     f"[dram-bandwidth] cluster=0 channel=0 operation=dma_read bytes={size} "
-                    f"repetitions=8 sample={sample} pattern=streaming hbm_offset={cursor} "
+                    f"repetitions=8 sample={sample} pattern=sequential hbm_offset={cursor} "
                     f"start_ps={start} end_ps={start + size * 1000} errors=0"
                 )
                 ranges.append((cursor, cursor + 8 * size))

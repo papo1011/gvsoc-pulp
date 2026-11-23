@@ -7,7 +7,7 @@ For the multi-cluster sweep, see [app_dram_multi](../app_dram_multi/README.md).
 
 > **Wide-port model.** The reference results use the asynchronous wide-port
 > arbiter. The earlier synchronous arbiter added about 104 ns to every 64 KiB
-> read through a modeling artifact; see the [explanation](../app_dram_bandwidth_streaming/README.md#wide-port-arbiter-model).
+> read through a modeling artifact; see the [explanation](../app_dram_bandwidth_sequential/README.md#wide-port-arbiter-model).
 
 ## What it measures
 

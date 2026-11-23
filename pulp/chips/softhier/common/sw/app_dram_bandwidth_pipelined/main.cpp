@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Contiguous HBM reads from 4 B to 1 MiB, the range of the streaming sweep. Each sample issues eight
+// Contiguous HBM reads from 4 B to 1 MiB, the range of the sequential sweep. Each sample issues eight
 // consecutive blocks back to back and waits once, so the DMA always has the
 // next copy queued: this measures sustained bandwidth rather than one copy at
 // a time.

@@ -7,9 +7,9 @@
   time_breakdown.png          where the time of a sample goes (dram.csv)
   ccds.png                    end to end, tCCD_S = 2 vs 4 (needs bandwidth_ccds2.csv)
   ccds_bus.png                DRAM data bus, tCCD_S = 2 vs 4 (dram.csv, dram_ccds2.csv)
-  streaming_vs_pipelined.png  one vs eight copies in flight
-  pipelined_speedup.png       pipelined / streaming bandwidth
-                              (both need the streaming sweep's bandwidth.csv)
+  sequential_vs_pipelined.png  one vs eight copies in flight
+  pipelined_speedup.png       pipelined / sequential bandwidth
+                              (both need the sequential sweep's bandwidth.csv)
 
 Figures whose inputs are missing are skipped.
 """
@@ -41,10 +41,10 @@ def main():
         "--output-dir", type=Path, help="where to write the figures (default: directory)"
     )
     parser.add_argument(
-        "--streaming",
+        "--sequential",
         type=Path,
-        default=HERE.parent / "app_dram_bandwidth_streaming/assets",
-        help="directory with the streaming sweep's bandwidth.csv",
+        default=HERE.parent / "app_dram_bandwidth_sequential/assets",
+        help="directory with the sequential sweep's bandwidth.csv",
     )
     args = parser.parse_args()
     data, out = args.directory, args.output_dir or args.directory
@@ -107,22 +107,22 @@ def main():
             "Pipelined reads, asynchronous router: tCCD_S = 2 vs 4, DRAM data bus",
             value="bus_GB_per_s",
         )
-    if (args.streaming / "bandwidth.csv").exists():
-        streaming = plot.load_curve(args.streaming / "bandwidth.csv")
+    if (args.sequential / "bandwidth.csv").exists():
+        sequential = plot.load_curve(args.sequential / "bandwidth.csv")
         plot.comparison_figure(
             [
-                ("Streaming (one copy in flight)", streaming, plot.STREAMING, "o"),
+                ("Sequential (one copy in flight)", sequential, plot.SEQUENTIAL, "o"),
                 ("Pipelined (eight copies in flight)", curve, plot.PIPELINED, "s"),
             ],
-            out / "streaming_vs_pipelined.png",
+            out / "sequential_vs_pipelined.png",
             f"One vs eight copies in flight ({CONFIGURATION})",
         )
         plot.ratio_figure(
-            streaming,
+            sequential,
             curve,
             out / "pipelined_speedup.png",
-            f"Pipelined over streaming bandwidth ({CONFIGURATION})",
-            "Pipelined / streaming bandwidth",
+            f"Pipelined over sequential bandwidth ({CONFIGURATION})",
+            "Pipelined / sequential bandwidth",
             plot.PIPELINED,
         )
 

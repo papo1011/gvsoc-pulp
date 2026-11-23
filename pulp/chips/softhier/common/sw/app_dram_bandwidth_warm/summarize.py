@@ -35,7 +35,7 @@ def measurements(log):
     extended = bool(limits and int(limits[0]) == 1 << 20)
     sizes = (*SIZES, 1 << 20) if extended else SIZES
     expected = {(size, sample) for size in sizes for sample in range(SAMPLES)}
-    streaming_offsets = {}
+    sequential_offsets = {}
     cursor = 0x02000000
     for size in sizes:
         for sample in range(SAMPLES):
@@ -43,7 +43,7 @@ def measurements(log):
                 cursor = 0x00800000
             alignment = max(size, 32)
             cursor = (cursor + alignment - 1) & ~(alignment - 1)
-            streaming_offsets[size, sample] = cursor
+            sequential_offsets[size, sample] = cursor
             cursor += 8 * size
     assert cursor <= 0x04000000
     patterns = set()
@@ -55,6 +55,8 @@ def measurements(log):
             continue
         row = dict(field.split("=", 1) for field in line.split()[1:])
         row.setdefault("pattern", "warm")  # Original logs predate the pattern field.
+        if row["pattern"] == "streaming":  # Logs from before the rename to sequential.
+            row["pattern"] = "sequential"
         for field in (*FIELDS, "start_ps", "end_ps", "errors"):
             if field not in ("operation", "pattern"):
                 row[field] = int(row[field], 0)
@@ -62,12 +64,12 @@ def measurements(log):
         if key not in expected or key in seen:
             raise ValueError(f"Unexpected or duplicate sample: {key}")
         pattern = row["pattern"]
-        if pattern not in ("warm", "streaming"):
+        if pattern not in ("warm", "sequential"):
             raise ValueError(f"Unknown access pattern: {pattern}")
-        if extended and pattern != "streaming":
-            raise ValueError("Whole-TCDM copies are supported by the streaming variant only")
+        if extended and pattern != "sequential":
+            raise ValueError("Whole-TCDM copies are supported by the sequential variant only")
         patterns.add(pattern)
-        offset = streaming_offsets[key] if pattern == "streaming" else 0x04000000 - SIZES[-1]
+        offset = sequential_offsets[key] if pattern == "sequential" else 0x04000000 - SIZES[-1]
         if (
             row["cluster"],
             row["channel"],
@@ -78,7 +80,7 @@ def measurements(log):
             raise ValueError(f"Unexpected benchmark configuration: {key}")
         if row["errors"] or row["end_ps"] <= row["start_ps"]:
             raise ValueError(f"Data errors or invalid measurement interval: {key}")
-        row["hbm_span"] = row["bytes"] * (8 if pattern == "streaming" else 1)
+        row["hbm_span"] = row["bytes"] * (8 if pattern == "sequential" else 1)
         intervals.append((row["start_ps"], row["end_ps"]))
         row["total_ns"] = (row["end_ps"] - row["start_ps"]) / 1000
         rows.append(row)
@@ -86,7 +88,7 @@ def measurements(log):
     if seen != expected:
         raise ValueError(f"Expected {len(expected)} samples, found {len(seen)}")
     if len(patterns) != 1:
-        raise ValueError("Cannot combine warm and streaming samples in one sweep")
+        raise ValueError("Cannot combine warm and sequential samples in one sweep")
     ordered = sorted(intervals)
     if any(first[1] > second[0] for first, second in zip(ordered, ordered[1:])):
         raise ValueError("Single-worker measurement windows must not overlap")
@@ -170,7 +172,7 @@ def main():
                 "Plateau criterion: the last three size medians span at most 3%; "
                 "from onset onward every median is at least 95% of the maximum.\n\n"
                 f"Access pattern: **{pattern}**. "
-                "Streaming uses distinct consecutive source blocks without read warm-up; "
+                "Sequential uses distinct consecutive source blocks without read warm-up; "
                 "warm mode repeatedly reads the same pre-read block. "
                 "Both use aligned, contiguous DMA reading from local HBM 0 "
                 "into cluster 0 TCDM, with one logical copy in flight. "

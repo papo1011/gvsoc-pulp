@@ -1,8 +1,11 @@
-# Local HBM bandwidth: streaming reads
+# Local HBM bandwidth: sequential reads
 
 How fast can one cluster read **successive** HBM blocks as the copy size grows?
 The DM core of cluster 0 reads its local HBM 0 into TCDM. Sizes double from
 **4 B to 1 MiB**: 19 sizes, three samples each, eight copies per sample.
+Each copy is awaited before the next one starts, so the copies run one after
+the other. (This app was called `app_dram_bandwidth_streaming` until
+2026-11-23; older logs print `pattern=streaming` and are still accepted.)
 
 > **Simulator setup.** These results use the asynchronous wide-port arbiter and
 > DRAMSys with `CCDS = 4`. The earlier synchronous arbiter capped large copies
@@ -11,17 +14,17 @@ The DM core of cluster 0 reads its local HBM 0 into TCDM. Sizes double from
 > configuration's `CCDS = 2` lets bursts overlap on the data bus and exceed
 > 64 GB/s (see the [pipelined guide](../app_dram_bandwidth_pipelined/README.md#why-ccds--2-exceeded-64-gbs)).
 
-## Streaming vs warm
+## Sequential vs warm
 
 The [warm app](../app_dram_bandwidth_warm/README.md) uses the same firmware
 with two differences, for a block of `N` bytes:
 
 ```text
-Streaming:  no read warm-up; time A, A+N, A+2N, ..., A+7N
+Sequential:  no read warm-up; time A, A+N, A+2N, ..., A+7N
 Warm:       read A once outside the timer, then time A, A, A, ..., A
 ```
 
-Every streaming sample reads a distinct source window. Both apps reuse one TCDM
+Every sequential sample reads a distinct source window. Both apps reuse one TCDM
 buffer and wait for each DMA copy before starting the next. No warm-up does not
 mean closed rows: consecutive blocks can still hit open rows. With the
 synchronous arbiter the two apps differed by about 0.1% at 64 KiB (56.080 vs
@@ -50,12 +53,12 @@ points to, set `"CCDS": 4` in `memspec/HBM4-emulation-4000.json`, and export
 
 ```bash
 set -e
-APP_DIR="$PWD/pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_streaming"
+APP_DIR="$PWD/pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_sequential"
 ANALYSIS_DIR="$PWD/pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_warm"
 make sh-hw TOPOLOGY=2d_mesh
 make sh-sw TOPOLOGY=2d_mesh app="$APP_DIR"
-mkdir -p .local-artifacts/dram-bandwidth-streaming
-RUN_DIR="$(mktemp -d "$PWD/.local-artifacts/dram-bandwidth-streaming/run.XXXXXX")"
+mkdir -p .local-artifacts/dram-bandwidth-sequential
+RUN_DIR="$(mktemp -d "$PWD/.local-artifacts/dram-bandwidth-sequential/run.XXXXXX")"
 cp sw_build/softhier.elf "$RUN_DIR/softhier.elf"
 make sh-run TOPOLOGY=2d_mesh SH_TRACE_ARGS= RUN_ARGS="--work-dir=$RUN_DIR" \
     > "$RUN_DIR/simulation.log" 2>&1
@@ -86,7 +89,7 @@ and [assets/dram.csv](assets/dram.csv).
 
 ### How fast is one copy at a time?
 
-![Streaming DMA read bandwidth](assets/bandwidth.png)
+![Sequential DMA read bandwidth](assets/bandwidth.png)
 
 **What it shows.** The bandwidth the cluster gets for each copy size, measured
 by the core over eight copies, each awaited before the next starts. The dashed
@@ -214,7 +217,7 @@ on single-burst copies (4 KiB: 108.875 instead of 108.625 ns per copy in the
 median) and on small write/readback copies, where the iDMA sends write chunks
 of 512 B one at a time.
 
-Streaming sweep, same firmware, both routers, both with the shared `CCDS = 2`
+Sequential sweep, same firmware, both routers, both with the shared `CCDS = 2`
 DRAMSys configuration (copies below 4 KiB vary by a few ns per sample with DRAM
 state in both runs):
 
@@ -231,7 +234,7 @@ The trace shows the difference with
 `Handling end of read request (... latency N)` grow by 7 per burst with the
 synchronous router and stay at 0 with the asynchronous one.
 
-![Streaming reads before and after each simulator fix](assets/simulator_fixes.png)
+![Sequential reads before and after each simulator fix](assets/simulator_fixes.png)
 
 **What it shows.** The same sweep in the three simulator configurations we
 went through: the synchronous router with `CCDS = 2` (light grey, the
@@ -250,7 +253,7 @@ timing) decide the order.
 ## Regenerate the figures
 
 ```bash
-APP_DIR="$PWD/pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_streaming"
+APP_DIR="$PWD/pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_sequential"
 pulp/.venv/bin/python "$APP_DIR/plot.py"
 ```
 
