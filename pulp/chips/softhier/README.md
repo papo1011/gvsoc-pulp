@@ -44,10 +44,8 @@
    pulp/pulp/chips/softhier/common/sw/app_example
    ```
 
-   Three HBM benchmarks are available:
+   Two HBM benchmarks are available:
 
-   - [`app_dram`](common/sw/app_dram/README.md): single-cluster dependent reads
-     and DMA copies to local and distant HBM.
    - [`app_dram_bandwidth_sequential`](common/sw/app_dram_bandwidth_sequential/README.md):
      one cluster reading local HBM, one DMA copy at a time, doubling the size
      from 4 B to 1 MiB to find the bandwidth plateau.
@@ -58,14 +56,19 @@
    Select one when building the software:
 
    ```bash
-   make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram
-   # Or the single-cluster bandwidth sweeps:
    make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_sequential
    make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_pipelined
    ```
 
-   Without `app=...`, `sh-sw` builds `app_example`. All DRAM apps initialize
+   Without `app=...`, `sh-sw` builds `app_example`. Both DRAM apps initialize
    their own data and do not need `sh-data`.
+
+   An earlier app, `app_dram`, compared the local HBM channel with the farthest
+   one (6 mesh hops) and was removed. Its last results (2026-11-20, asynchronous
+   wide-port arbiter): a dependent 4 B load took 13.8 ns locally and 37.0 ns
+   far away, while 64 KiB DMA reads reached 61.7 and 60.3 GB/s. Distance
+   triples scalar latency but costs large DMA copies only about 2%. The code is
+   in the git history.
 
 6. Run the simulation:
 

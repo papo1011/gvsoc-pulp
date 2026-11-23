@@ -106,7 +106,7 @@ static uint32_t measure(uint32_t bytes, uint32_t sample, uint32_t offset)
         errors += check(target, bytes, pattern(0));
     }
 
-    // One logical DMA copy at a time, as in app_dram. The DMA may still have
+    // One logical DMA copy at a time. The DMA may still have
     // several internal requests in flight. Timing includes issue and wait costs.
     const uint64_t start = flex_time_ps();
     for (uint32_t repetition = 0; repetition < REPEATS; ++repetition)
