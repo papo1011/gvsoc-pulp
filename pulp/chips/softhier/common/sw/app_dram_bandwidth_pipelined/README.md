@@ -85,12 +85,12 @@ same bank group, or `S`, another).
 All figures below share the same horizontal axis: the block size, from 4 B to
 1 MiB, doubling at each point. They come from one run on 2026-11-23
 (asynchronous wide-port arbiter, DRAMSys with `CCDS = 4`). All 57 samples
-passed the data check. The numbers are in [assets/bandwidth.csv](assets/bandwidth.csv)
-and [assets/dram.csv](assets/dram.csv).
+passed the data check. The numbers are in [assets/data/bandwidth.csv](assets/data/bandwidth.csv)
+and [assets/data/dram.csv](assets/data/dram.csv).
 
 ### How fast can one cluster read?
 
-![Pipelined contiguous read bandwidth](assets/bandwidth.png)
+![Pipelined contiguous read bandwidth](assets/figures/bandwidth.png)
 
 **What it shows.** The bandwidth the cluster gets for each block size, measured
 by the core from the first DMA request to the end of the last copy. The dashed
@@ -168,7 +168,7 @@ there small copies only ever beat the model.
 
 ### One copy at a time vs eight in flight
 
-![Sequential vs pipelined reads](assets/sequential_vs_pipelined.png)
+![Sequential vs pipelined reads](assets/figures/sequential_vs_pipelined.png)
 
 **What it shows.** The same reads done two ways. Blue: the
 [sequential sweep](../app_dram_bandwidth_sequential/README.md) waits for each
@@ -201,7 +201,7 @@ request travelling to the DRAM, the DRAM itself, and the data coming back. To
 see the DRAM on its own we also read the DRAMSys records, which tell exactly
 when each 32 B burst used the DRAM data bus.
 
-![DRAM data bus vs end-to-end bandwidth](assets/dram_vs_end_to_end.png)
+![DRAM data bus vs end-to-end bandwidth](assets/figures/dram_vs_end_to_end.png)
 
 **What it shows.** Two bandwidths for the same samples:
 
@@ -218,7 +218,7 @@ channel's physical limit** (one 32 B burst per nanosecond on each of the two
 pseudo-channels). The cluster's curve catches up more slowly. The next chart
 shows why.
 
-![Time outside the DRAM bus window](assets/fixed_cost.png)
+![Time outside the DRAM bus window](assets/figures/fixed_cost.png)
 
 **What it shows.** For each sample, the core's measured time minus the DRAM's
 busy window: the time spent before the first burst (the request travelling to
@@ -234,7 +234,7 @@ about 2 ns per 512 B up to 4 KiB (the largest burst the iDMA sends). We have
 not traced why yet; it looks like the last burst's data crossing the
 interconnect after the DRAM is done.
 
-![Where the time of a sample goes](assets/time_breakdown.png)
+![Where the time of a sample goes](assets/figures/time_breakdown.png)
 
 **What it shows.** Each sample's time split into three parts, as a share of
 the total: green, the DRAM bus moving data; yellow, the DRAM bus sitting idle
@@ -276,14 +276,14 @@ With `CCDS = 4`, equal to the burst, no burst ever overlaps and the bus tops at
 postponed out of these short samples; a longer stream would pay up to about 5%
 for them (`tRFC / tREFI` = 65 ns / 1.25 µs).
 
-![tCCD_S = 2 vs 4, DRAM data bus](assets/ccds_bus.png)
+![tCCD_S = 2 vs 4, DRAM data bus](assets/figures/ccds_bus.png)
 
 **What it shows.** DRAM bus bandwidth with the shared configuration
 (`CCDS = 2`, grey) and the corrected one (`CCDS = 4`, green).
 **What to take away.** With `CCDS = 2` the bus goes above the physical limit:
 67.4 GB/s at 512 B, 64.25 GB/s at 1 MiB. With `CCDS = 4` it never passes
 64.00 GB/s. End to end the difference is smaller (64.22 vs 63.97 GB/s at 1 MiB,
-[ccds.png](assets/ccds.png)), but enough to put a measurement above a physical
+[ccds.png](assets/figures/ccds.png)), but enough to put a measurement above a physical
 limit.
 
 ### What the overlap looks like
@@ -294,7 +294,7 @@ trace: computed from each read command as above, not measured on wires. So
 these pictures show the commands the simulator issued and the bus they imply.
 To check them yourself, see [Where the data comes from](#where-the-data-comes-from).
 
-![Requests of the first three 512 B copies, CCDS = 4](assets/requests_512B_ccds4.png)
+![Requests of the first three 512 B copies, CCDS = 4](assets/figures/requests_512B_ccds4.png)
 
 **What it shows.** The first three copies on pseudo-channel 0, one row per 32 B
 request: waiting in the controller (light grey), read command to data (dark
@@ -302,7 +302,7 @@ grey), burst on the data bus (blue).
 **What to take away.** A clean staircase: one burst per nanosecond, never two
 at once.
 
-![Requests of the first three 512 B copies, CCDS = 2](assets/requests_512B_ccds2.png)
+![Requests of the first three 512 B copies, CCDS = 2](assets/figures/requests_512B_ccds2.png)
 
 **What to take away.** In red, bursts that start while another burst of the
 same pseudo-channel is still on the wires. Every overlap is between two
@@ -310,7 +310,7 @@ same pseudo-channel is still on the wires. Every overlap is between two
 bank group are never less than 1 ns apart (`tCCD_L`). Bursts of the two pseudo-channels
 overlap in time normally, on separate wires, and are not marked.
 
-![The same bursts by bank group, CCDS = 4](assets/bank_groups_512B_ccds4.png)
+![The same bursts by bank group, CCDS = 4](assets/figures/bank_groups_512B_ccds4.png)
 
 **What it shows.** The same bursts, one row per bank group, and at the bottom
 the data bus of the pseudo-channel, which all bank groups share.
@@ -318,7 +318,7 @@ the data bus of the pseudo-channel, which all bank groups share.
 two from 5, then 6, then 7, and again. The bus is one continuous row, one burst
 at a time.
 
-![The same bursts by bank group, CCDS = 2](assets/bank_groups_512B_ccds2.png)
+![The same bursts by bank group, CCDS = 2](assets/figures/bank_groups_512B_ccds2.png)
 
 **What to take away.** The red bursts start while a burst of *another* bank
 group is still on the bus. Between 5.5 and 8 ns, bank groups 4 and 7 alternate
@@ -345,8 +345,8 @@ that queued while the first copy's rows were being opened: that adds the rest
 of the 67.4 GB/s. In a 1 MiB sample 8.2% of
 the burst spacings overlap; pauses where new rows must be opened (every 8 KiB
 of addresses) give nearly all of it back, leaving exactly the request rate.
-Full counts per sample and rule: [spacing_ccds4.csv](assets/spacing_ccds4.csv),
-[spacing_ccds2.csv](assets/spacing_ccds2.csv).
+Full counts per sample and rule: [spacing_ccds4.csv](assets/data/spacing_ccds4.csv),
+[spacing_ccds2.csv](assets/data/spacing_ccds2.csv).
 
 ### Where the data comes from
 
@@ -357,22 +357,22 @@ writes every request and every DRAM command into an SQLite file in the run
 directory: `DRAMSysRecordable0_hbm4-emu-example_example_ch0.tdb` for channel 0.
 A full run makes about 1 GB per channel, too much for the repository.
 
-So `assets/` keeps the 512 B sample of the figures cut out of it, in the same
-format: [trace_ccds4.tdb](assets/trace_ccds4.tdb) and
-[trace_ccds2.tdb](assets/trace_ccds2.tdb), 128 requests with all their phases.
+So `assets/traces/` keeps the 512 B sample of the figures cut out of it, in the same
+format: [trace_ccds4.tdb](assets/traces/trace_ccds4.tdb) and
+[trace_ccds2.tdb](assets/traces/trace_ccds2.tdb), 128 requests with all their phases.
 Each file also stores the configuration it was made with
 (`GeneralInfo.Memspec`), so it shows by itself whether `CCDS` was 4 or 2. The
-CSVs next to them are what the figures read. All of them were made from the
+CSVs in `assets/data/` are what the figures read. All of them were made from the
 full traces by [query_trace.py](query_trace.py) (commands in
 [Build and run](#build-and-run)); the runs used the firmware at pulp commit
-`0541a8a`, and rerunning them gives exactly the CSVs in `assets/`.
+`0541a8a`, and rerunning them gives exactly the CSVs in `assets/data/`.
 
 To look at the bursts yourself:
 
 ```bash
 python3 - <<'EOF'
 import sqlite3
-db = sqlite3.connect("assets/trace_ccds2.tdb")
+db = sqlite3.connect("assets/traces/trace_ccds2.tdb")
 for begin, end, group in db.execute(
         "SELECT DataStrobeBegin, DataStrobeEnd, BankGroup FROM Phases "
         "WHERE PhaseName = 'RD' AND Rank = 0 ORDER BY DataStrobeBegin LIMIT 10"):
@@ -393,11 +393,11 @@ APP_DIR="$PWD/pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_pipelined"
 pulp/.venv/bin/python "$APP_DIR/plot.py"
 ```
 
-`plot.py` reads the CSVs in `assets/` and redraws, one chart per image,
+`plot.py` reads the CSVs in `assets/data/` and redraws into `assets/figures/`, one chart per image,
 `bandwidth.png`; `dram_vs_end_to_end.png`, `fixed_cost.png` and
 `time_breakdown.png` (from `dram.csv`); `ccds.png` (from `bandwidth_ccds2.csv`)
 and `ccds_bus.png` (from `dram_ccds2.csv`); `sequential_vs_pipelined.png`
-(with the sequential app's `assets/bandwidth.csv`;
+(with the sequential app's `assets/data/bandwidth.csv`;
 `--sequential DIR` points elsewhere); and `requests_512B_ccds*.png` and
 `bank_groups_512B_ccds*.png` (from `trace_ccds4.csv` and `trace_ccds2.csv`). For a new run,
 `plot.py "$RUN_DIR"` reads `bandwidth.csv` and `dram.csv` there and writes the

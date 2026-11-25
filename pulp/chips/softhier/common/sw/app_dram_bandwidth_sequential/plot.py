@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Draw the sequential sweep's figures, one chart per image, from the CSVs in a directory.
+"""Draw the sequential sweep's figures, one chart per image, from the CSVs in a directory
+(by default assets/data/, into assets/figures/).
 
   bandwidth.png           end-to-end bandwidth, fitted latency-bandwidth model
   dram_vs_end_to_end.png  DRAM data-bus vs end-to-end bandwidth (needs dram.csv)
@@ -21,6 +22,8 @@ from dram_common import plot_sweep as plot
 
 LABEL = "sequential (one copy in flight)"
 CONFIGURATION = "asynchronous router, tCCD_S = 4"
+HERE = Path(__file__).resolve().parent
+DATA, FIGURES = HERE / "assets/data", HERE / "assets/figures"
 
 
 def main():
@@ -31,14 +34,18 @@ def main():
         "directory",
         type=Path,
         nargs="?",
-        default=Path(__file__).parent / "assets",
-        help="directory with the CSVs (default: this app's assets/)",
+        default=DATA,
+        help="directory with the CSVs (default: this app's assets/data/)",
     )
     parser.add_argument(
-        "--output-dir", type=Path, help="where to write the figures (default: directory)"
+        "--output-dir",
+        type=Path,
+        help="where to write the figures (default: assets/figures/ for the app's own"
+        " data, the CSV directory otherwise)",
     )
     args = parser.parse_args()
-    data, out = args.directory, args.output_dir or args.directory
+    data = args.directory
+    out = args.output_dir or (FIGURES if data.resolve() == DATA else data)
     curve = plot.load_curve(data / "bandwidth.csv")
     plot.bandwidth_figure(
         curve,

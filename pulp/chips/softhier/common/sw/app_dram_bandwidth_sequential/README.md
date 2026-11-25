@@ -85,12 +85,12 @@ nominal bus bandwidth of one HBM channel (two 32-bit pseudo-channels at
 All figures below share the same horizontal axis: the copy size, from 4 B to
 1 MiB, doubling at each point. They come from one run on 2026-11-22
 (asynchronous wide-port arbiter, DRAMSys with `CCDS = 4`). All 57 samples
-passed the data check. The numbers are in [assets/bandwidth.csv](assets/bandwidth.csv)
-and [assets/dram.csv](assets/dram.csv).
+passed the data check. The numbers are in [assets/data/bandwidth.csv](assets/data/bandwidth.csv)
+and [assets/data/dram.csv](assets/data/dram.csv).
 
 ### How fast is one copy at a time?
 
-![Sequential DMA read bandwidth](assets/bandwidth.png)
+![Sequential DMA read bandwidth](assets/figures/bandwidth.png)
 
 **What it shows.** The bandwidth the cluster gets for each copy size, measured
 by the core over eight copies, each awaited before the next starts. The dashed
@@ -145,7 +145,7 @@ request travelling to the DRAM, the DRAM itself, and the data coming back. To
 see the DRAM on its own we also read the DRAMSys records, which tell exactly
 when each 32 B burst used the DRAM data bus.
 
-![DRAM data bus vs end-to-end bandwidth](assets/dram_vs_end_to_end.png)
+![DRAM data bus vs end-to-end bandwidth](assets/figures/dram_vs_end_to_end.png)
 
 **What it shows.** Two bandwidths for the same samples:
 
@@ -162,7 +162,7 @@ the DRAM bus carries 63.81 GB/s and the cluster gets 63.79 GB/s. Unlike the
 here even the DRAM is far from its limit for mid-size copies (37.3 GB/s at
 4 KiB): with one copy at a time, the DRAM spends part of its window waiting.
 
-![Time outside the DRAM bus window](assets/fixed_cost.png)
+![Time outside the DRAM bus window](assets/figures/fixed_cost.png)
 
 **What it shows.** For each sample, the core's measured time minus the DRAM's
 busy window: the time before the first burst (the first request travelling to
@@ -175,7 +175,7 @@ shorter, about 43.5 ns, and grows by about 2 ns per 512 B up to 4 KiB (the
 largest burst the iDMA sends). We have not traced why yet; it looks like the
 last burst's data crossing the interconnect after the DRAM is done.
 
-![Where the time of a sample goes](assets/time_breakdown.png)
+![Where the time of a sample goes](assets/figures/time_breakdown.png)
 
 **What it shows.** Each sample's time split into three parts, as a share of
 the total: green, the DRAM bus moving data; yellow, the DRAM bus sitting idle
@@ -235,7 +235,7 @@ The trace shows the difference with
 `Handling end of read request (... latency N)` grow by 7 per burst with the
 synchronous router and stay at 0 with the asynchronous one.
 
-![Sequential reads before and after each simulator fix](assets/simulator_fixes.png)
+![Sequential reads before and after each simulator fix](assets/figures/simulator_fixes.png)
 
 **What it shows.** The same sweep in the three simulator configurations we
 went through: the synchronous router with `CCDS = 2` (light grey, the
@@ -258,7 +258,7 @@ APP_DIR="$PWD/pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_sequential"
 pulp/.venv/bin/python "$APP_DIR/plot.py"
 ```
 
-`plot.py` reads the CSVs in `assets/` and redraws, one chart per image,
+`plot.py` reads the CSVs in `assets/data/` and redraws into `assets/figures/`, one chart per image,
 `bandwidth.png`, `dram_vs_end_to_end.png`, `fixed_cost.png` and
 `time_breakdown.png` (from `dram.csv`), and `simulator_fixes.png` (from
 `bandwidth_ccds2.csv` and `bandwidth_sync_router_ccds2.csv`, the 2026-11-20 and
