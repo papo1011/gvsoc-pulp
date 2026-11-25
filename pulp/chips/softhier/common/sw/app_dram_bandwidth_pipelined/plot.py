@@ -10,9 +10,6 @@
   ccds_bus.png                DRAM data bus, tCCD_S = 2 vs 4 (dram.csv, dram_ccds2.csv)
   sequential_vs_pipelined.png  one vs eight copies in flight
                               (needs the sequential sweep's bandwidth.csv)
-  requests_512B_ccds{4,2}.png  the first copies of a 512 B sample, request by
-                              request (needs trace_ccds4.csv / trace_ccds2.csv)
-  bank_groups_512B_ccds{4,2}.png  the same bursts, one row per bank group
 
 Figures whose inputs are missing are skipped.
 """
@@ -22,7 +19,6 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app_dram_bandwidth_pipelined import trace_figures
 from dram_common import plot_sweep as plot
 
 HERE = Path(__file__).resolve().parent
@@ -144,30 +140,6 @@ def main():
             out / "sequential_vs_pipelined.png",
             f"One vs eight copies in flight ({CONFIGURATION})",
         )
-    traces = {
-        ccds: trace_figures.load_trace(data / f"trace_ccds{ccds}.csv")[512, 0]
-        for ccds in (4, 2)
-        if (data / f"trace_ccds{ccds}.csv").exists()
-    }
-    if traces:
-        # The same time axis for both, so the two staircases compare directly.
-        ranges = [
-            trace_figures.time_range(trace_figures.first_copies(t, 3)[0]) for t in traces.values()
-        ]
-        xlim = (min(r[0] for r in ranges) - 0.5, max(r[1] for r in ranges) + 0.5)
-        for ccds, trace in traces.items():
-            trace_figures.pipeline_figure(
-                trace,
-                out / f"requests_512B_ccds{ccds}.png",
-                f"First three 512 B copies, pseudo-channel 0, tCCD_S = {ccds}",
-                xlim=xlim,
-            )
-            trace_figures.bank_group_figure(
-                trace,
-                out / f"bank_groups_512B_ccds{ccds}.png",
-                f"Same bursts by bank group, pseudo-channel 0, tCCD_S = {ccds}",
-                xlim=(-0.5, xlim[1]),
-            )
 
 
 if __name__ == "__main__":
