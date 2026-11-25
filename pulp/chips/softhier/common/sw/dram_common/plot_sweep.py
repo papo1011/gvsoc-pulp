@@ -132,6 +132,38 @@ def fit(curve):
     return alpha, 1 / beta
 
 
+# The floor model's fixed cost rises linearly from RAMP_FROM to RAMP_TO, where it
+# reaches the alpha fitted on large blocks; RAMP_TO is also the largest burst
+# the iDMA sends.
+RAMP_FROM, RAMP_TO = 512, 4096
+
+
+def floor_fit(curve, limit):
+    """The two small-block terms of the floor model, per copy in ns.
+
+    floor: no sample is shorter than the slowest one up to 256 B, whatever the
+    block size (the copies reach the DRAM one after the other).
+    small_alpha: the fixed cost at 512 B, T - N / B, lower than the alpha
+    fitted on large blocks.
+    """
+    times = {row["bytes"]: row["median_ns_per_transfer"] for row in curve}
+    if 256 not in times or RAMP_FROM not in times:
+        raise ValueError("The floor model requires the 256 B and 512 B measurements")
+    floor = max(time for size, time in times.items() if size <= 256)
+    return floor, times[RAMP_FROM] - RAMP_FROM / limit
+
+
+def model_time(size, alpha, limit, floor=None, small_alpha=None):
+    """Time per copy predicted by the alpha-beta model, or by the floor model
+    when floor and small_alpha are given: max(floor, fixed + N / B), with the
+    fixed cost rising linearly from small_alpha at 512 B to alpha at 4 KiB."""
+    if floor is None:
+        return alpha + size / limit
+    share = (min(max(size, RAMP_FROM), RAMP_TO) - RAMP_FROM) / (RAMP_TO - RAMP_FROM)
+    fixed = small_alpha + share * (alpha - small_alpha)
+    return max(floor, fixed + size / limit)
+
+
 def size_axis(ax, label=True):
     ax.set_xscale("log", base=2)
     ax.set_xticks(TICKS, [size_label(size) for size in TICKS] if label else [])
@@ -183,8 +215,12 @@ def save(fig, output):
     print(output)
 
 
-def bandwidth_figure(curve, output, title, color, label, with_fit=False):
-    """End-to-end bandwidth over the whole sweep, with its plateau region."""
+def bandwidth_figure(curve, output, title, color, label, with_fit=False, with_floor=False):
+    """End-to-end bandwidth over the whole sweep, with its plateau region.
+
+    with_fit draws the alpha-beta model; with_floor also draws the floor model
+    and labels the alpha-beta one as the previous model.
+    """
     x = [row["bytes"] for row in curve]
     y = [row["median_GB_per_s"] for row in curve]
     onset = plateau(curve)
@@ -202,13 +238,27 @@ def bandwidth_figure(curve, output, title, color, label, with_fit=False):
         alpha, limit = fit(curve)
         last = x[-1].bit_length() - 1
         sizes = [2 ** (power / 8) for power in range(8 * 2, 8 * last + 1)]
+        fitted = f"N / (α + N/B): α = {alpha:.1f} ns per copy, B = {limit:.2f} GB/s"
         ax.plot(
             sizes,
-            [size / (alpha + size / limit) for size in sizes],
-            color=INK,
+            [size / model_time(size, alpha, limit) for size in sizes],
+            color=OLDER[0] if with_floor else INK,
             linestyle=":",
+            linewidth=1.8 if with_floor else 1.4,
+            label=f"Previous model {fitted}" if with_floor else f"Model {fitted}",
+        )
+    if with_fit and with_floor:
+        floor, small_alpha = floor_fit(curve, limit)
+        ax.plot(
+            sizes,
+            [size / model_time(size, alpha, limit, floor, small_alpha) for size in sizes],
+            color=INK,
+            linestyle="-.",
             linewidth=1.4,
-            label=f"Model N / (α + N/B): α = {alpha:.1f} ns per copy, B = {limit:.2f} GB/s",
+            label=(
+                f"New model N / max({floor:.1f}, α(N) + N/B): α(N) from {small_alpha:.1f}"
+                f" at 512 B to {alpha:.1f} ns per copy at 4 KiB"
+            ),
         )
     ax.fill_between(
         x,

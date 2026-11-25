@@ -65,10 +65,21 @@ def main():
         plot.PIPELINED,
         f"End to end, {LABEL}, median and min-max of 3",
         with_fit=True,
+        with_floor=True,
     )
     print(f"Plateau from {onset} bytes")
     alpha, limit = plot.fit(curve)
     print(f"Fit on 64-256 KiB: alpha = {alpha:.3f} ns per copy, B = {limit:.6f} GB/s")
+    floor, small_alpha = plot.floor_fit(curve, limit)
+    print(
+        f"Floor = {floor:.3f} ns, fixed cost from {small_alpha:.3f} ns at 512 B to alpha at 4 KiB, per copy"
+    )
+    for row in curve:
+        model = plot.model_time(row["bytes"], alpha, limit, floor, small_alpha)
+        print(
+            f"  {row['bytes']:>7} B: measured {row['median_ns_per_transfer']:9.3f} ns,"
+            f" floor model {model:9.3f} ns ({100 * (row['median_ns_per_transfer'] / model - 1):+.1f}%)"
+        )
     samples = None
     if (data / "dram.csv").exists():
         samples = plot.load_samples(data / "dram.csv")
