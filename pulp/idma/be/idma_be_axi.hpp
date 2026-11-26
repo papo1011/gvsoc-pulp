@@ -21,6 +21,7 @@
 #pragma once
 
 #include <vector>
+#include <unordered_map>
 #include <vp/vp.hpp>
 #include <vp/itf/io.hpp>
 #include "../idma.hpp"
@@ -74,6 +75,8 @@ private:
     void write_handle_req_end(vp::IoReq *req);
     // Send the pending read burst to AXI
     void send_read_burst_to_axi();
+    // Send one AXI read request (a whole burst or one chunk of it)
+    void send_read_req_to_axi(vp::IoReq *req);
     // Enqueue a burst to pending queue. Burst will be processed in order
     void enqueue_burst(uint64_t base, uint64_t size, bool is_write, IdmaTransfer *transfer);
 
@@ -97,8 +100,18 @@ private:
     // Bursts sent to destination backend are enqueued here until they are acknowledged and
     // released
     std::queue<vp::IoReq *> read_bursts_waiting_ack;
-    // List of timestamps for each burst where they can be considered as finished
-    std::vector<int64_t> read_timestamps;
+    // Timestamps at which the requests of read_waiting_bursts can be considered as finished,
+    // in the same order
+    std::queue<int64_t> read_timestamps;
+
+    // When non-zero, read bursts are sent to AXI as requests of at most this many bytes, so
+    // that the first data can be written to the destination while the rest of the burst is
+    // still being read, as R beats are on real AXI. Zero sends each burst as one request.
+    uint64_t read_chunk_size;
+    // Burst of each chunk request in flight or waiting for acknowledgement
+    std::unordered_map<vp::IoReq *, vp::IoReq *> read_chunk_burst;
+    // Chunks of each burst not acknowledged yet, indexed by burst id
+    std::vector<int> read_chunks_left;
 
     // Queue of pending bursts. This contains both read and write bursts. This is mostly used
     // to process them in order. The front burst is removed from the queue once it is fully

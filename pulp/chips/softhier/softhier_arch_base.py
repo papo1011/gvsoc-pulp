@@ -71,6 +71,10 @@ class SoftHierArchBase:
         self.cluster_tcdm_bank_width = 4
         self.cluster_tcdm_bank_nb    = 128
 
+        # AXI read data reaches the iDMA in chunks of this many bytes; -1 is one TCDM line,
+        # 0 the whole burst at once (the model before the chunks were added)
+        self.idma_read_chunk = -1
+
         self.cluster_tcdm_base       = 0x00000000
         self.cluster_tcdm_size       = 0x00100000
         self.cluster_tcdm_remote     = 0x30000000

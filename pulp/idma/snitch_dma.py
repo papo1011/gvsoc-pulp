@@ -38,15 +38,23 @@ class SnitchDma(gvsoc.systree.Component):
         Size of the local area.
     tcdm_width: int
         Width of the local interconnect, in bytes.
+    read_chunk_size: int
+        When non-zero, AXI read bursts are returned in chunks of this many bytes, so that the
+        data is written to the destination while the rest of the burst is still being read.
     """
 
-    def __init__(self, parent: gvsoc.systree.Component, name: str,
-            transfer_queue_size: int=8,
-            burst_queue_size: int=8,
-            burst_size: int=0,
-            loc_base: int=0,
-            loc_size: int=0,
-            tcdm_width: int=0):
+    def __init__(
+        self,
+        parent: gvsoc.systree.Component,
+        name: str,
+        transfer_queue_size: int = 8,
+        burst_queue_size: int = 8,
+        burst_size: int = 0,
+        loc_base: int = 0,
+        loc_size: int = 0,
+        tcdm_width: int = 0,
+        read_chunk_size: int = 0,
+    ):
 
         super().__init__(parent, name)
 
@@ -59,14 +67,17 @@ class SnitchDma(gvsoc.systree.Component):
             'pulp/idma/be/idma_be_tcdm.cpp',
         ])
 
-        self.add_properties({
-            "transfer_queue_size": transfer_queue_size,
-            "burst_queue_size": burst_queue_size,
-            "burst_size" : burst_size,
-            "loc_base": loc_base,
-            "loc_size": loc_size,
-            "tcdm_width": tcdm_width,
-        })
+        self.add_properties(
+            {
+                "transfer_queue_size": transfer_queue_size,
+                "burst_queue_size": burst_queue_size,
+                "burst_size": burst_size,
+                "loc_base": loc_base,
+                "loc_size": loc_size,
+                "tcdm_width": tcdm_width,
+                "read_chunk_size": read_chunk_size,
+            }
+        )
 
     def i_OFFLOAD(self) -> gvsoc.systree.SlaveItf:
         """Returns the offload port.

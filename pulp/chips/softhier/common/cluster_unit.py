@@ -57,22 +57,38 @@ def find_binary_entry(elf_filename):
 
 class ClusterArch:
     def __init__(
-        self,  
-        num_core,           cluster_id,
-        spatz_num_lane,     spatz_lane_width,
-        tcdm_bank_nb,       tcdm_bank_width,
-        inst_base,          inst_size,
-        tcdm_base,          tcdm_size,
-        stack_base,         stack_size,
-        hbm_start_base,     hbm_node_addr_space,
-        zomem_base,         zomem_size,
-        reg_base,           reg_size,
-        idma_outstand_txn,  idma_outstand_burst,
-        redmule_ce_height,  redmule_ce_width,
-        redmule_ce_pipe,    redmule_elem_size,
-        redmule_reg_base,   redmule_reg_size,
-        itc_reg_base,       itc_reg_size,
-        auto_fetch=False):
+        self,
+        num_core,
+        cluster_id,
+        spatz_num_lane,
+        spatz_lane_width,
+        tcdm_bank_nb,
+        tcdm_bank_width,
+        inst_base,
+        inst_size,
+        tcdm_base,
+        tcdm_size,
+        stack_base,
+        stack_size,
+        hbm_start_base,
+        hbm_node_addr_space,
+        zomem_base,
+        zomem_size,
+        reg_base,
+        reg_size,
+        idma_outstand_txn,
+        idma_outstand_burst,
+        redmule_ce_height,
+        redmule_ce_width,
+        redmule_ce_pipe,
+        redmule_elem_size,
+        redmule_reg_base,
+        redmule_reg_size,
+        itc_reg_base,
+        itc_reg_size,
+        auto_fetch=False,
+        idma_read_chunk=None,
+    ):
 
         self.num_core               = num_core
         self.cluster_id             = cluster_id
@@ -94,6 +110,12 @@ class ClusterArch:
         self.reg_size               = reg_size
         self.idma_outstand_txn      = idma_outstand_txn
         self.idma_outstand_burst    = idma_outstand_burst
+        # AXI read data reaches the iDMA in chunks of this many bytes, so it is written to the
+        # TCDM while the rest of the burst is still being read, as R beats are in hardware.
+        # None: one TCDM line; 0: the whole burst at once (the previous model).
+        self.idma_read_chunk = (
+            tcdm_bank_nb * tcdm_bank_width if idma_read_chunk is None else idma_read_chunk
+        )
         self.redmule_ce_height      = redmule_ce_height
         self.redmule_ce_width       = redmule_ce_width
         self.redmule_ce_pipe        = redmule_ce_pipe
@@ -205,9 +227,16 @@ class ClusterUnit(gvsoc.systree.Component):
         csr = ClusterCSR(self, 'csr', nb_cores=arch.num_core, cluster_id=arch.cluster_id)
 
         # iDMA
-        idma = SnitchDma(self, 'idma', loc_base=arch.tcdm_base, loc_size=arch.tcdm_size,
-                tcdm_width=(arch.tcdm_bank_nb * arch.tcdm_bank_width), transfer_queue_size=arch.idma_outstand_txn, burst_queue_size=arch.idma_outstand_burst)
-
+        idma = SnitchDma(
+            self,
+            'idma',
+            loc_base=arch.tcdm_base,
+            loc_size=arch.tcdm_size,
+            tcdm_width=(arch.tcdm_bank_nb * arch.tcdm_bank_width),
+            transfer_queue_size=arch.idma_outstand_txn,
+            burst_queue_size=arch.idma_outstand_burst,
+            read_chunk_size=arch.idma_read_chunk,
+        )
 
         #
         # Bindings

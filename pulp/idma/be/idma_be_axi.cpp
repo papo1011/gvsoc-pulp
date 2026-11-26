@@ -65,14 +65,16 @@ IDmaBeAxi::IDmaBeAxi(vp::Component *idma, std::string itf_name, IdmaBeProducer *
     // Get the top parameter giving the maximum burst size for AXI transactions. TCDM will alight to this parameter
     this->burst_size = idma->get_js_config()->get_int("burst_size");
 
-    // Use it to size the array of bursts and associated timestamps
+    // Optional chunking of read bursts, see read_chunk_size
+    this->read_chunk_size = idma->get_js_config()->get_int("read_chunk_size");
+
+    // Use it to size the array of bursts and associated chunk counters
     this->bursts.resize(burst_queue_size);
-    this->read_timestamps.resize(burst_queue_size);
+    this->read_chunks_left.resize(burst_queue_size);
 
     for (int i=0; i<burst_queue_size; i++)
     {
-        // This ID is used to index the array of timestamps to schedule when a burst
-        // is done.
+        // This ID is used to index the array of chunk counters.
         this->bursts[i].id = i;
 
         // Since bursts are allocated statically, also allocate the data to handle maximum
@@ -109,6 +111,19 @@ void IDmaBeAxi::reset(bool active)
         {
             this->read_waiting_bursts.pop();
         }
+        while (this->read_timestamps.size() > 0)
+        {
+            this->read_timestamps.pop();
+        }
+        while (this->read_bursts_waiting_ack.size() > 0)
+        {
+            this->read_bursts_waiting_ack.pop();
+        }
+        for (auto &entry : this->read_chunk_burst)
+        {
+            delete entry.first;
+        }
+        this->read_chunk_burst.clear();
         while(this->pending_bursts.size() > 0)
         {
             this->pending_bursts.pop();
@@ -208,6 +223,43 @@ void IDmaBeAxi::send_read_burst_to_axi()
     // And also trigger the middle-end in case it has another burst to push
     this->be->update();
 
+    if (this->read_chunk_size == 0 || req->get_size() <= this->read_chunk_size)
+    {
+        this->read_chunks_left[req->id] = 0;
+        this->send_read_req_to_axi(req);
+        return;
+    }
+
+    // Split the burst into chunks, all sent now: the burst is a single AR on real AXI, and
+    // the interconnect spaces the chunks by its bandwidth. Each chunk gets its own response,
+    // as soon as its data is read, like a group of R beats.
+    IdmaTransfer *transfer = (IdmaTransfer *)*req->arg_get(0);
+    uint64_t size = req->get_size();
+    int nb_chunks = (size + this->read_chunk_size - 1) / this->read_chunk_size;
+    this->read_chunks_left[req->id] = nb_chunks;
+
+    this->trace.msg(vp::Trace::LEVEL_TRACE,
+                    "Splitting read burst (burst: %p, base: 0x%lx, size: 0x%lx, chunks: %d)\n", req,
+                    req->get_addr(), size, nb_chunks);
+
+    for (uint64_t offset = 0; offset < size; offset += this->read_chunk_size)
+    {
+        vp::IoReq *chunk = new vp::IoReq();
+        chunk->prepare();
+        chunk->set_is_write(false);
+        chunk->set_addr(req->get_addr() + offset);
+        chunk->set_size(std::min(this->read_chunk_size, size - offset));
+        chunk->set_data(req->get_data() + offset);
+        chunk->arg_alloc();
+        *chunk->arg_get(0) = (void *)transfer;
+        stamp_collective_payload(chunk, transfer, false);
+        this->read_chunk_burst[chunk] = req;
+        this->send_read_req_to_axi(chunk);
+    }
+}
+
+void IDmaBeAxi::send_read_req_to_axi(vp::IoReq *req)
+{
     this->trace.msg(vp::Trace::LEVEL_TRACE, "Sending read burst to AXI (burst: %p, base: 0x%lx, size: 0x%lx, latency:%d)\n",
         req, req->get_addr(), req->get_size(), req->get_latency());
 
@@ -235,13 +287,11 @@ void IDmaBeAxi::send_read_burst_to_axi()
     }
 }
 
-
-
 void IDmaBeAxi::read_handle_req_end(vp::IoReq *req)
 {
     // Remember at which timestamp the burst must be notified
     this->trace.msg(vp::Trace::LEVEL_TRACE, "Handling end of read request (req: %p, latency %d)\n", req, req->get_latency());
-    this->read_timestamps[req->id] = this->clock.get_cycles() + req->get_latency();
+    this->read_timestamps.push(this->clock.get_cycles() + req->get_latency());
     // Queue the requests, they will be notified in order.
     this->read_waiting_bursts.push(req);
     // Enqueue fsm event at desired timestamp in case the event is not already enqueued before
@@ -258,6 +308,21 @@ void IDmaBeAxi::write_data_ack(uint8_t *data)
     this->trace.msg(vp::Trace::LEVEL_TRACE, "Acknowleged burst (burst: %p)\n", req);
 
     this->read_bursts_waiting_ack.pop();
+
+    // A chunk frees its burst only once it is the burst's last acknowledged chunk
+    auto chunk = this->read_chunk_burst.find(req);
+    if (chunk != this->read_chunk_burst.end())
+    {
+        vp::IoReq *burst = chunk->second;
+        this->read_chunk_burst.erase(chunk);
+        delete req;
+        if (--this->read_chunks_left[burst->id] > 0)
+        {
+            return;
+        }
+        req = burst;
+    }
+
     this->free_bursts.push(req);
 
     // Since a new request is now free, notify the backend in case it was waiting for it
@@ -412,8 +477,9 @@ void IDmaBeAxi::fsm_handler(vp::Block *__this, vp::ClockEvent *event)
 
         // Push the data only once the timestamp has expired to take into account the latency
         // returned when the data was read
-        if (_this->read_timestamps[req->id] <= _this->clock.get_cycles())
+        if (_this->read_timestamps.front() <= _this->clock.get_cycles())
         {
+            _this->read_timestamps.pop();
             // Move the burst to a different queue so that we can free the request when it is
             // acknowledge
             _this->read_waiting_bursts.pop();
@@ -428,7 +494,7 @@ void IDmaBeAxi::fsm_handler(vp::Block *__this, vp::ClockEvent *event)
         else
         {
             // Otherwise check again when timetamp is reached
-            _this->fsm_event.enqueue(_this->read_timestamps[req->id] - _this->clock.get_cycles());
+            _this->fsm_event.enqueue(_this->read_timestamps.front() - _this->clock.get_cycles());
         }
     }
 }
