@@ -6,9 +6,11 @@ from **4 B to 1 MiB** (doubling each time: 19 sizes, three samples each). It is
 the [sequential sweep](../app_dram_bandwidth_sequential/README.md) with eight
 copies in flight instead of one.
 
-> **Simulator setup.** Asynchronous wide-port arbiter and DRAMSys with
-> `CCDS = 4`. The shared DRAMSys configuration has `CCDS = 2`, which lets bursts
-> overlap on the data bus and go past 64 GB/s
+> **Simulator setup.** Asynchronous wide-port arbiter, iDMA writing read data
+> to TCDM in 512 B chunks
+> ([why](../app_dram_bandwidth_sequential/README.md#simulator-fixes)), and
+> DRAMSys with `CCDS = 4`. The shared DRAMSys configuration has `CCDS = 2`,
+> which lets bursts overlap on the data bus and go past 64 GB/s
 > ([why](#why-ccds--2-exceeded-64-gbs)).
 
 ## What is measured
@@ -74,7 +76,7 @@ came from the same bank group (`tCCD_L`) or not (`tCCD_S`).
 
 ## Results
 
-One run on 2026-11-23; all 57 samples passed the data check. Every chart has
+One run on 2026-11-26; all 57 samples passed the data check. Every chart has
 the block size on the horizontal axis, 4 B to 1 MiB. The numbers are in
 [bandwidth.csv](assets/data/bandwidth.csv) and [dram.csv](assets/data/dram.csv).
 
@@ -83,22 +85,22 @@ the block size on the horizontal axis, 4 B to 1 MiB. The numbers are in
 ![Pipelined contiguous read bandwidth](assets/figures/bandwidth.png)
 
 Orange is the bandwidth the core measures; the light band around it is the
-min–max of the three samples (under 0.7% wide from 1 KiB up). The dashed line
-is the channel's peak, 64 GB/s, and the grey area is the plateau, where every
-point is within 5% of the best. The two black curves are the models explained
+min–max of the three samples. The dashed line is the channel's peak, 64 GB/s,
+and the grey area is the plateau, where every point is within 5% of the best.
+The two black curves are the models explained
 [below](#how-far-the-curve-is-from-a-simple-model).
 
 **One cluster saturates its HBM channel.** Bandwidth climbs fast, flattens from
-16 KiB and reaches **63.97 GB/s at 1 MiB, 99.96% of the peak**.
+8 KiB and reaches **63.98 GB/s at 1 MiB, 99.97% of the peak**.
 
 | 1 KiB | 4 KiB | 16 KiB | 64 KiB | 1 MiB |
 | ---: | ---: | ---: | ---: | ---: |
-| 47.35 GB/s | 57.39 GB/s | 62.21 GB/s | 63.54 GB/s | 63.97 GB/s |
+| 47.91 GB/s | 59.04 GB/s | 62.68 GB/s | 63.67 GB/s | 63.98 GB/s |
 
 ### How far the curve is from a simple model
 
 We start from the latency-bandwidth (alpha-beta) model of the
-[sequential sweep](../app_dram_bandwidth_sequential/README.md#how-the-asymptote-is-calculated):
+[sequential sweep](../app_dram_bandwidth_sequential/README.md#how-far-the-curve-is-from-a-simple-model):
 every copy pays a fixed cost `alpha`, then moves its `N` bytes at bandwidth
 `1/beta`.
 
@@ -107,61 +109,45 @@ T(N)=\alpha+\beta N
 $$
 
 Fitted on the 64–256 KiB points (time per copy = sample time / 8), it gives
-**`alpha = 7.375 ns` per copy and `1/beta = 64.000 GB/s`**, the channel's peak.
-From 4 KiB to 1 MiB it predicts every time to the picosecond, even at 512 KiB
-and 1 MiB, which were not in the fit. Below 4 KiB it is off by up to 20%. The
-next chart shows why.
+**`alpha = 5.375 ns` per copy and `1/beta = 64.000 GB/s`**, the channel's peak.
+**From 512 B to 1 MiB it predicts every time to the picosecond**, even at
+512 KiB and 1 MiB, which were not in the fit.
 
-![Time outside the DRAM bus window](assets/figures/fixed_cost.png)
+`alpha` is the on-chip latency. In every sample from 512 B up, 41.75 ns pass
+outside the DRAM's busy window (the first request travelling to the DRAM, the
+last data travelling back), and the window is 1.25 ns longer than the bytes
+alone. That is 43 ns per sample, 5.375 ns per copy, since the eight copies
+share it. The sequential sweep pays 37.125 ns per copy, 6.9× more, and that is
+where pipelining wins on small and medium blocks.
 
-This is the part of each sample when the DRAM is *not* busy: the core's time
-minus the window from the start of the first burst on the DRAM data bus to the
-end of the last one (DRAMSys records both). It is the request travelling to the
-DRAM and the data travelling back.
+(Before the [iDMA fix](../app_dram_bandwidth_sequential/README.md#idma-read-data-in-chunks)
+the time outside the window grew from 42 to 56.5 ns between 512 B and 4 KiB,
+`alpha` was 7.375 ns, and the model needed a fixed cost that grew with the
+block. The fix saves 16 ns per sample from 4 KiB, +2.9% at 4 KiB; up to 512 B
+nothing changed.)
 
-**From 4 KiB up it is always 56.5 ns; below, it is shorter and grows with the
-block.** About 42 ns up to 512 B, then roughly 2 ns more every 512 B until
-4 KiB, the largest burst the iDMA sends. We have not traced why yet; it looks
-like the last burst's data crossing the interconnect after the DRAM is done.
-Either way, a single `alpha` cannot fit every block size.
-
-The large-block `alpha` is these 56.5 ns plus 2.5 ns by which the bus window is
-longer than the bytes alone: 59 ns per sample, 7.375 ns per copy, since the
-eight copies share it. The sequential sweep pays 50.125 ns per copy, 6.8× more,
-and that is where pipelining wins on small and medium blocks.
-
-**So below 4 KiB we add a floor and a growing fixed cost:**
+**Below 512 B we add a floor:**
 
 $$
-T(N)=\max\left(T_{\min},\ \alpha(N)+\beta N\right)
+T(N)=\max\left(T_{\min},\ \alpha+\beta N\right)
 $$
 
-- **`T_min = 9.875 ns` per copy (79 ns per sample).** Up to 256 B a sample
-  takes 73–79 ns whatever the size: the eight requests reach the DRAM about
-  4.5 ns apart, so the time depends on how fast they arrive, not on the bytes.
-  `T_min` is the slowest of these samples.
-- **`alpha(N)` rises in a straight line** from 5.375 ns per copy at 512 B (the
-  measured `T − βN` there) to the large-block 7.375 ns at 4 KiB, and stays flat
-  outside that range. Only these two ends are fitted; 1 and 2 KiB are a check.
+**`T_min = 9.875 ns` per copy (79 ns per sample).** Up to 256 B a sample takes
+73–79 ns whatever the size: the eight requests reach the DRAM about 4.5 ns
+apart, so the time depends on how fast they arrive, not on the bytes. `T_min`
+is the slowest of these samples.
 
-From 4 KiB up this is the alpha-beta model again, and the curve has no jump.
-
-| Block | Measured | Alpha-beta model | New model |
+| Block | Measured | Alpha-beta model | With the floor |
 | ---: | ---: | ---: | ---: |
-| 4 B | 0.44 GB/s | 0.54 GB/s (−18%) | 0.41 GB/s (+8%) |
-| 32 B | 3.24 GB/s | 4.06 GB/s (−20%) | 3.24 GB/s (0%) |
-| 64 B | 6.48 GB/s | 7.64 GB/s (−15%) | 6.48 GB/s (0%) |
-| 256 B | 25.92 GB/s | 22.51 GB/s (+15%) | 25.92 GB/s (0%) |
-| 512 B | 38.28 GB/s | 33.30 GB/s (+15%) | 38.28 GB/s (0%) |
-| 1 KiB | 47.35 GB/s | 43.81 GB/s (+8%) | 47.27 GB/s (+0.2%) |
-| 2 KiB | 53.72 GB/s | 52.01 GB/s (+3%) | 53.57 GB/s (+0.3%) |
-| 4 KiB | 57.39 GB/s | 57.39 GB/s (0%) | 57.39 GB/s (0%) |
+| 4 B | 0.44 GB/s | 0.74 GB/s (−40%) | 0.41 GB/s (+8%) |
+| 32 B | 3.24 GB/s | 5.45 GB/s (−41%) | 3.24 GB/s (0%) |
+| 64 B | 6.48 GB/s | 10.04 GB/s (−35%) | 6.48 GB/s (0%) |
+| 256 B | 25.92 GB/s | 27.31 GB/s (−5%) | 25.92 GB/s (0%) |
+| 512 B | 38.28 GB/s | 38.28 GB/s (0%) | 38.28 GB/s (0%) |
 
-The percentages are measured vs model. **The new model is within 0.3% from
-32 B to 1 MiB.** Below 32 B it is up to 8% pessimistic, because smaller
-requests reach the DRAM slightly closer together. Keep in mind that the ramp is
-empirical and that the sweep has no point between 2 and 4 KiB. The sequential
-sweep keeps the plain alpha-beta model.
+The percentages are measured vs model. **With the floor the model is exact
+from 32 B to 1 MiB.** Below 32 B it is up to 8% pessimistic, because smaller
+requests reach the DRAM slightly closer together.
 
 ### One copy at a time vs eight in flight
 
@@ -172,15 +158,15 @@ which waits for each copy before starting the next; orange is this one, with
 eight in flight.
 
 **Both reach 64 GB/s, but pipelining gets there much sooner.** The gain comes
-from waiting less, not from more bandwidth: 3.6× at 256 B, 1.6× at 4 KiB, and
+from waiting less, not from more bandwidth: 3.7× at 256 B, 1.4× at 4 KiB, and
 under 4% from 64 KiB, where a single big copy already keeps the DRAM busy.
 
 | Block | Sequential | Pipelined | Gain |
 | ---: | ---: | ---: | ---: |
-| 256 B | 7.19 GB/s | 25.92 GB/s | 3.6× |
-| 4 KiB | 35.05 GB/s | 57.39 GB/s | 1.6× |
-| 64 KiB | 61.04 GB/s | 63.54 GB/s | 1.04× |
-| 1 MiB | 63.79 GB/s | 63.97 GB/s | 1.003× |
+| 256 B | 7.04 GB/s | 25.92 GB/s | 3.7× |
+| 4 KiB | 42.17 GB/s | 59.04 GB/s | 1.4× |
+| 64 KiB | 61.62 GB/s | 63.67 GB/s | 1.03× |
+| 1 MiB | 63.86 GB/s | 63.98 GB/s | 1.002× |
 
 **For the compiler:** tiles below about 64 KiB need several DMA transfers in
 flight (double buffering or more) to get close to the channel bandwidth.
@@ -196,8 +182,8 @@ green counts more bytes than the copy.)
 
 **The DRAM is flat out already at 1 KiB** (63.4 GB/s) and reaches **64.00 GB/s
 at 1 MiB, its physical limit**: one 32 B burst per nanosecond on each
-pseudo-channel. The cluster catches up more slowly because of the fixed latency
-[above](#how-far-the-curve-is-from-a-simple-model).
+pseudo-channel. The cluster catches up more slowly because of the 43 ns of
+on-chip latency per sample [above](#how-far-the-curve-is-from-a-simple-model).
 
 ![Where the time of a sample goes](assets/figures/time_breakdown.png)
 
@@ -205,9 +191,10 @@ Each sample's time split in three: green, the DRAM bus moving data; yellow, the
 bus idle between the first and the last burst; purple, the time outside the
 DRAM window.
 
-**There is almost no yellow.** With eight copies queued, the DRAM never waits
-for the next request (at most 3.3 ns per sample). Large blocks are nearly all
-green; up to 256 B, purple is more than half. Compare it with the
+**From 512 B there is almost no yellow.** With eight copies queued, the DRAM
+never waits for the next request (at most 1.6 ns per sample). Large blocks are
+nearly all green; up to 256 B, purple is more than half, and the yellow is the
+gaps between requests that arrive 4.5 ns apart. Compare it with the
 [sequential breakdown](../app_dram_bandwidth_sequential/README.md#dram-bandwidth-vs-what-the-cluster-sees),
 where a big yellow area shows the DRAM waiting between copies.
 
@@ -234,17 +221,18 @@ The data still arrived intact (`errors=0`), because the simulator copies it
 instead of sending it over wires.
 
 With `CCDS = 4`, as long as one burst, nothing overlaps and the bus tops at
-64.00 GB/s. **All results in this README use `CCDS = 4`.** (Refreshes are
-postponed out of these short samples; a long stream would pay up to about 5%
-for them, `tRFC / tREFI` = 65 ns / 1.25 µs.)
+64.00 GB/s. **All results in this README use `CCDS = 4`.** (DRAMSys may
+postpone up to 128 refreshes, so it mostly pushes them out of the samples; a
+long stream would pay up to about 5% for them, `tRFC / tREFI` =
+65 ns / 1.25 µs.)
 
 ![tCCD_S = 2 vs 4, DRAM data bus](assets/figures/ccds_bus.png)
 
 DRAM bus bandwidth with the shared configuration (`CCDS = 2`, grey) and the
 corrected one (`CCDS = 4`, green). **With `CCDS = 2` the bus goes past the
-physical limit:** 67.4 GB/s at 512 B, 64.25 GB/s at 1 MiB. End to end the gap
-is smaller (64.22 vs 63.97 GB/s at 1 MiB, [ccds.png](assets/figures/ccds.png)),
-but enough to report a result no hardware could reach.
+physical limit:** 67.4 GB/s at 512 B, 66.07 GB/s at 1 MiB. End to end it is
+the same (66.04 vs 63.98 GB/s at 1 MiB, [ccds.png](assets/figures/ccds.png)):
+3% above what any hardware could reach.
 
 ### What the overlap looks like
 
@@ -280,25 +268,33 @@ that half nanosecond, two bursts share 32 wires. It only happens between
 different bank groups, where the gap is `tCCD_S`; inside one bank group
 `tCCD_L` still keeps reads 1 ns apart.
 
-### Why the `CCDS = 2` curve settles at 64.25 GB/s
+### Why the `CCDS = 2` curve settles at 66.07 GB/s
 
-In both runs the requests reach the DRAM at the same times. Their rate is set
-by the cluster and the network, and it is above 64 GB/s:
+The cluster sends one 512 B chunk (16 requests of 32 B) every 7.75 ns,
+**66.07 GB/s**, faster than the channel. This rate is set by the cluster and
+the network, and it is the same for 512 B and 1 MiB copies as long as the
+DRAM keeps up.
 
-| | 512 B copies | 4 KiB to 1 MiB copies |
+| | 512 B copies | 1 MiB copies |
 | --- | ---: | ---: |
-| Requests arrive | one copy every 7.75 ns: 66.07 GB/s | 4 KiB every 63.75 ns: 64.25 GB/s |
+| Requests, `CCDS = 4` | 66.07 GB/s | 64.00 GB/s |
 | DRAM bus, `CCDS = 4` | 62.77 GB/s | 64.00 GB/s |
-| DRAM bus, `CCDS = 2` | 67.42 GB/s | 64.25 GB/s |
+| Requests, `CCDS = 2` | 66.07 GB/s | 66.07 GB/s |
+| DRAM bus, `CCDS = 2` | 67.42 GB/s | 66.07 GB/s |
 
-With `CCDS = 4` the DRAM is the bottleneck: it stops at 64.00 GB/s and the
-extra requests wait in the controller. With `CCDS = 2` it can go faster than
-the requests, so the queue empties and the bus just follows the request rate.
+With `CCDS = 4` the DRAM is the bottleneck: in a long copy its queue fills,
+it accepts a new chunk only every 8 ns, and the bus stops at 64.00 GB/s. With
+`CCDS = 2` it can go faster than the requests, so the queue never fills and
+the bus just follows the request rate.
 At 512 B it also catches up, with overlaps, on the requests that queued while
-the first rows were opening, which gives the 67.4 GB/s. In a 1 MiB sample 8.2%
-of the gaps overlap, but the pauses to open new rows (every 8 KiB) give almost
-all of it back. Counts per sample: [spacing_ccds4.csv](assets/data/spacing_ccds4.csv),
+the first rows were opening, which gives the 67.4 GB/s. In a 1 MiB sample
+19.1% of the gaps between bursts overlap. Counts per sample:
+[spacing_ccds4.csv](assets/data/spacing_ccds4.csv),
 [spacing_ccds2.csv](assets/data/spacing_ccds2.csv).
+
+Before the iDMA fix, large copies sent their requests more slowly, 4 KiB every
+63.75 ns (64.25 GB/s), so `CCDS = 2` went only 0.4% over the peak. Without the
+fix the error was barely visible; with it, it is 3%.
 
 ### Where the data comes from
 
@@ -311,8 +307,10 @@ the 512 B sample of the screenshots, from both runs:
 [trace_ccds2.tdb](assets/traces/trace_ccds2.tdb), 128 requests with all their
 phases and the configuration they were made with (`GeneralInfo.Memspec`).
 The CSVs in `assets/data/` come from the full runs through the commands in
-[Build and run](#build-and-run), with the firmware at pulp commit `0541a8a`;
-rerunning them gives the same files.
+[Build and run](#build-and-run), at pulp commit `4e6fc6a`; rerunning them
+gives the same files. The two traces are from the earlier runs at `0541a8a`,
+before the iDMA fix: a 512 B copy fits in one chunk, and the new runs give the
+same 128 requests with the same phases, only shifted in time.
 
 To print the first bursts yourself:
 

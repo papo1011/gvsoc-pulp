@@ -9,12 +9,13 @@ with eight copies in flight. (Until 2026-11-23 this app was called
 `app_dram_bandwidth_streaming`; older logs print `pattern=streaming` and are
 still accepted.)
 
-> **Simulator setup.** Asynchronous wide-port arbiter and DRAMSys with
-> `CCDS = 4`. The earlier synchronous arbiter capped large copies at about
-> 57.9 GB/s through a modelling artifact
-> ([Wide-port arbiter model](#wide-port-arbiter-model)), and the shared DRAMSys
-> configuration's `CCDS = 2` lets bursts overlap on the data bus and go past
-> 64 GB/s ([pipelined guide](../app_dram_bandwidth_pipelined/README.md#why-ccds--2-exceeded-64-gbs)).
+> **Simulator setup.** Asynchronous wide-port arbiter, iDMA writing read data
+> to TCDM in 512 B chunks, and DRAMSys with `CCDS = 4`. The earlier synchronous
+> arbiter capped large copies at about 57.9 GB/s, and the earlier iDMA added up
+> to 14 ns per copy after the DRAM had finished
+> ([Simulator fixes](#simulator-fixes)). The shared DRAMSys configuration's
+> `CCDS = 2` lets bursts overlap on the data bus and go past 64 GB/s
+> ([pipelined guide](../app_dram_bandwidth_pipelined/README.md#why-ccds--2-exceeded-64-gbs)).
 
 ## What is measured
 
@@ -71,7 +72,7 @@ one HBM channel (two 32-bit pseudo-channels at 8 Gbit/s per pin);
 
 ## Results
 
-One run on 2026-11-22; all 57 samples passed the data check. Every chart has
+One run on 2026-11-25; all 57 samples passed the data check. Every chart has
 the block size on the horizontal axis, 4 B to 1 MiB. The numbers are in
 [bandwidth.csv](assets/data/bandwidth.csv) and [dram.csv](assets/data/dram.csv).
 
@@ -81,27 +82,22 @@ the block size on the horizontal axis, 4 B to 1 MiB. The numbers are in
 
 Blue is the bandwidth the core measures; the light band around it is the
 min–max of the three samples. The dashed line is the channel's peak, 64 GB/s,
-the grey area the plateau (every point within 5% of the best), and the dotted
-curve a simple model, explained [below](#how-the-asymptote-is-calculated).
+the grey area the plateau (every point within 5% of the best). The dotted
+curve is the model explained [below](#how-far-the-curve-is-from-a-simple-model).
 
 **Small copies are slow, because each one waits for its whole round trip to
-the DRAM.** Bandwidth flattens from 64 KiB and reaches **63.79 GB/s at 1 MiB,
-99.7% of the peak**. Below 4 KiB the three samples differ by up to 23%: a
-sample lasts only a few hundred ns, so a few ns of DRAM state change it. From
-16 KiB up they agree within 0.5%.
+the DRAM.** Bandwidth flattens from 64 KiB and reaches **63.86 GB/s at 1 MiB,
+99.8% of the peak**.
 
-| Block | `CCDS = 2` (2026-11-20) | `CCDS = 4` |
-| ---: | ---: | ---: |
-| 4 KiB | 37.62 GB/s | 35.05 GB/s |
-| 16 KiB | 54.50 GB/s | 53.52 GB/s |
-| 64 KiB | 61.56 GB/s | 61.04 GB/s |
-| 1 MiB | 64.08 GB/s | 63.79 GB/s |
+| 1 KiB | 4 KiB | 16 KiB | 64 KiB | 1 MiB |
+| ---: | ---: | ---: | ---: | ---: |
+| 21.73 GB/s | 42.17 GB/s | 56.09 GB/s | 61.62 GB/s | 63.86 GB/s |
 
-With the old `CCDS = 2` the 1 MiB point went above the peak, and small copies
-looked faster than they are: overlapping bursts shortened each copy's data
-phase (a 4 KiB copy took 108.875 ns instead of 116.875 ns).
+Below 8 KiB the three samples of a size differ by up to 20%; from 32 KiB up
+they agree within 1%. The difference is DRAM refresh, explained
+[below](#why-small-copies-are-noisy).
 
-### How the asymptote is calculated
+### How far the curve is from a simple model
 
 We fit the latency-bandwidth (alpha-beta) model to the median time per copy:
 every copy pays a fixed cost `alpha`, then moves its `N` bytes at bandwidth
@@ -111,15 +107,49 @@ $$
 T(N)=\alpha+\beta N
 $$
 
-On the 64, 128 and 256 KiB points it gives **`alpha = 50.125 ns` and
-`1/beta = 63.938 GB/s`** (64.06 ns per 4 KiB burst). The 512 KiB and 1 MiB
-points, left out of the fit, land within 0.1% of the prediction. `alpha` is an
-effective fixed cost, not a separate measurement of DMA startup. (With
-`CCDS = 2` the same fit gave 64.251 GB/s, above the peak.)
+On the 64, 128 and 256 KiB points it gives **`alpha = 37.125 ns` and
+`1/beta = 63.951 GB/s`** (64.05 ns per 4 KiB burst). **From 8 KiB up it is
+within 1% of every point**, including 512 KiB and 1 MiB, which were not in the
+fit. (With `CCDS = 2` the same fit gave 64.251 GB/s, above the peak.)
 
-The model works from 4 KiB up. Smaller copies beat it (1 KiB: 20.2 GB/s
-measured, 15.5 GB/s predicted) because their fixed cost is smaller than
-`alpha`, as the next section shows.
+Below 8 KiB the model is pessimistic: the copies are faster than predicted.
+
+| Block | Measured | Model |
+| ---: | ---: | ---: |
+| 4 B | 0.13 GB/s | 0.11 GB/s (+20%) |
+| 64 B | 1.85 GB/s | 1.68 GB/s (+10%) |
+| 512 B | 13.09 GB/s | 11.34 GB/s (+15%) |
+| 1 KiB | 21.73 GB/s | 19.27 GB/s (+13%) |
+| 4 KiB | 42.17 GB/s | 40.48 GB/s (+4%) |
+| 8 KiB | 49.91 GB/s | 49.58 GB/s (+0.7%) |
+
+The percentages are measured vs model. In time, a small copy costs 31–40 ns
+where the model says 37 ns. Part of it is probably the DRAM rows: up to 4 KiB
+a read can be served in 9.25 ns, from 8 KiB never under 12 ns, about one row
+activation (`tRCD`, 2.5 ns) more. Below 8 KiB the noise is about as large as
+the error, so a more detailed model would only fit the noise.
+
+The on-chip part, instead, is the same at every size: the time of a sample
+outside the DRAM's busy window (the first request travelling to the DRAM and
+the last data travelling back) is 43.5–45 ns from 4 B to 1 MiB. Before the
+[iDMA fix](#idma-read-data-in-chunks) it grew to 58.5 ns from 4 KiB.
+
+### Why small copies are noisy
+
+DRAMSys refreshes the whole channel every 1.25 µs on average (`tREFI`), and a
+refresh blocks it for 65 ns (`tRFC`). The controller may postpone or pull in
+refreshes, so where they land depends on everything that ran before. A sample
+of eight small copies lasts 250–800 ns, so about one sample in two contains a
+refresh.
+
+We checked it in the DRAMSys database of a full run. Up to 4 KiB, every sample
+more than 6 ns slower than the fastest of its size had a refresh inside its
+window. Samples hit by a refresh were 21–29 ns slower on average, up to 108 ns
+with two refreshes. Samples without a refresh were all within 6 ns of each
+other.
+
+So below 8 KiB, compare runs of the same firmware only: changing a `printf`
+shifts every sample by a few ns and moves the refreshes to other samples.
 
 ### DRAM bandwidth vs what the cluster sees
 
@@ -130,24 +160,12 @@ Green is how hard the DRAM works: bytes on its data bus over the time from its
 first burst to its last. (Below 32 B the DRAM still moves a whole 32 B burst per
 copy, so green counts more bytes than the copy.)
 
-**The two curves meet at the top** (63.81 GB/s on the DRAM bus, 63.79 GB/s for
+**The two curves meet at the top** (63.88 GB/s on the DRAM bus, 63.86 GB/s for
 the cluster at 1 MiB), **but for mid-size copies even the DRAM is far from its
-limit**: 37.3 GB/s at 4 KiB. With one copy at a time, the DRAM spends part of
+limit**: 44.7 GB/s at 4 KiB. With one copy at a time, the DRAM spends part of
 its window waiting. In the
 [pipelined sweep](../app_dram_bandwidth_pipelined/README.md#dram-bandwidth-vs-what-the-cluster-sees)
 it does not.
-
-![Time outside the DRAM bus window](assets/figures/fixed_cost.png)
-
-This is the part of each sample outside the DRAM's busy window: the first
-request travelling to the DRAM and the last data travelling back.
-
-**From 4 KiB up it is about 58.5 ns, whatever the size.** It is a fixed
-latency, not a lower bandwidth: 6% of a 4 KiB sample, 0.04% of a 1 MiB one.
-Below 4 KiB it is shorter, about 43.5 ns, and grows by about 2 ns per 512 B up
-to 4 KiB, the largest burst the iDMA sends. We have not traced why yet; it
-looks like the last burst's data crossing the interconnect after the DRAM is
-done.
 
 ![Where the time of a sample goes](assets/figures/time_breakdown.png)
 
@@ -156,13 +174,17 @@ bus idle between the first and the last burst; purple, the time outside the
 DRAM window.
 
 **The big yellow area is the price of waiting for each copy.** Between two
-copies the DRAM sits idle for about 50 ns, the round trip of the next request:
-340–380 ns per sample from 8 KiB up. At 4 KiB the DRAM is busy only 55% of the
-time, and up to 512 B less than 18%. Yellow shrinks only because large copies
-make the gaps negligible; the pipelined sweep removes it by keeping eight
-copies queued.
+copies the DRAM sits idle for 30–40 ns, the round trip of the next request:
+200–285 ns per sample. At 4 KiB the DRAM is busy only 66% of the time, and up
+to 512 B at most 20%. Yellow shrinks only because large copies make the gaps
+negligible; the pipelined sweep removes it by keeping eight copies queued.
 
-## Wide-port arbiter model
+## Simulator fixes
+
+Two parts of GVSoC made the curve look worse than hardware would. Both are
+fixed in the runs above.
+
+### Wide-port arbiter
 
 Each cluster's iDMA reaches the NoC through `wide_arbiter_<cluster>`
 ([softhier_system_base.py](../../../softhier_system_base.py)), a router with
@@ -180,40 +202,81 @@ response. Each 4 KiB burst cost 63.75 ns of DRAM time plus 7 ns:
 while the DRAM works, so nothing adds up.
 
 **The asynchronous router (`synchronous=False`, current) counts it once.**
-Requests queue and leave the port spaced by its bandwidth (one 4 KiB burst
-every 8 cycles); responses pass straight back. Against a DRAM that serves one
-burst every ~64 ns the spacing costs nothing, while a fast target would still
-be limited to 512 B/cycle. It is not a beat-accurate AXI model, since it
-throttles requests rather than the R channel, but the throughput is right. It
-adds one cycle per request, visible only on single-burst copies (4 KiB:
-108.875 instead of 108.625 ns per copy).
+Requests queue and leave the port spaced by its bandwidth; responses pass
+straight back. Against a DRAM that serves one burst every ~64 ns the spacing
+costs nothing, while a fast target would still be limited to 512 B/cycle. It
+is not a beat-accurate AXI model, since it throttles requests rather than the
+R channel, but the throughput is right.
 
 To see the difference in a trace, run with
 `--trace=/system/cluster_0/idma/axi_read --trace-level=trace`: the lines
 `Handling end of read request (... latency N)` grow by 7 per burst with the
 synchronous router and stay at 0 with the asynchronous one.
 
+### iDMA read data in chunks
+
+The iDMA splits a copy into AXI bursts of up to 4 KiB. **Before the fix, a
+read burst was answered in one piece:** the DRAMSys bridge
+(`core/models/memory/dramsys.cpp`) replies only when all 128 of its 32 B
+accesses are done, and only then did the iDMA write the burst into TCDM, one
+512 B line every 2 cycles. So after the DRAM had sent its last byte, the copy
+still waited up to 8 line writes, 16 ns for a 4 KiB burst.
+
+In hardware the data comes back as R beats, and the iDMA writes them into TCDM
+while the rest of the burst is still on its way: only the last line is left
+at the end. **Now the iDMA reads each burst in 512 B chunks** (one TCDM line),
+each answered and written on its own (`read_chunk_size` in
+`pulp/idma/be/idma_be_axi.cpp`). The chunks of a burst still count as one
+outstanding burst. To get the old behaviour back, run with
+`--config-opt system/idma_read_chunk=0`.
+
+![Sequential reads with whole bursts and with 512 B chunks](assets/figures/read_chunks.png)
+
+The same firmware with the old iDMA (grey) and the new one (blue), from
+[bandwidth_whole_burst.csv](assets/data/bandwidth_whole_burst.csv) and
+[bandwidth.csv](assets/data/bandwidth.csv).
+
+**The fix matters between 1 and 64 KiB.** Up to 512 B every sample is
+identical, to the picosecond: a burst that fits in one line had nothing to
+wait for. From 1 KiB each copy saves one line write per extra 512 B of its
+last burst, up to 14 ns from 4 KiB (2 ns at 1 KiB, measured on samples without
+a refresh). At 4 KiB that is 17% more bandwidth; at 1 MiB, 0.1%. The DRAM side
+does not change.
+
+| Block | Whole burst | 512 B chunks | Gain |
+| ---: | ---: | ---: | ---: |
+| 1 KiB | 18.75 GB/s | 21.73 GB/s | +16% |
+| 4 KiB | 35.97 GB/s | 42.17 GB/s | +17% |
+| 16 KiB | 52.87 GB/s | 56.09 GB/s | +6% |
+| 64 KiB | 61.04 GB/s | 61.62 GB/s | +1% |
+| 1 MiB | 63.80 GB/s | 63.86 GB/s | +0.1% |
+
+(Below 16 KiB the medians also move with the refreshes, so the gain there is
+± a few %.)
+
+### All the fixes together
+
 ![Sequential reads before and after each simulator fix](assets/figures/simulator_fixes.png)
 
-The same sweep in the three configurations we went through: synchronous router
-with `CCDS = 2` (light grey, the original), asynchronous router with `CCDS = 2`
-(dark grey), and the final asynchronous router with `CCDS = 4` (blue).
+The same sweep in the four configurations we went through, from the original
+(light grey) to the final one (blue).
 
-**The router fix is the big one.** The synchronous router flattens at about
-57.8 GB/s, 9.4% below the final curve at 1 MiB. The `CCDS` fix is smaller but
-matters at the top: with `CCDS = 2` the curve ends slightly above 64 GB/s
-(0.5–3.2% faster from 8 KiB up, 7.4–7.7% at 2–4 KiB). Below 1 KiB the three
-curves cross at random: a sample lasts only about 270 ns, so a few ns of DRAM
-state decide the order.
+**The router fix is the big one at the top**: the synchronous router flattens
+at about 57.8 GB/s, 9.5% below the final curve at 1 MiB. **The iDMA fix is the
+big one in the middle**, up to 17% around 4 KiB. The `CCDS` fix is small but
+keeps the curve under the physical limit: with `CCDS = 2` it ends slightly
+above 64 GB/s. Below 1 KiB the curves cross at random because of the
+refreshes.
 
-| Block | Synchronous router | Asynchronous router |
-| ---: | ---: | ---: |
-| 4 KiB | 37.71 GB/s | 37.62 GB/s |
-| 16 KiB | 51.42 GB/s | 54.50 GB/s |
-| 64 KiB | 56.08 GB/s | 61.56 GB/s |
-| 1 MiB | 57.78 GB/s | 64.08 GB/s |
+| Block | Synchronous router, `CCDS = 2` | Asynchronous router, `CCDS = 2` | `CCDS = 4` | 512 B chunks (final) |
+| ---: | ---: | ---: | ---: | ---: |
+| 4 KiB | 37.71 GB/s | 37.62 GB/s | 35.97 GB/s | 42.17 GB/s |
+| 16 KiB | 51.42 GB/s | 54.50 GB/s | 52.87 GB/s | 56.09 GB/s |
+| 64 KiB | 56.08 GB/s | 61.56 GB/s | 61.04 GB/s | 61.62 GB/s |
+| 1 MiB | 57.78 GB/s | 64.08 GB/s | 63.80 GB/s | 63.86 GB/s |
 
-(Both with the shared `CCDS = 2` configuration and the same firmware.)
+(The two `CCDS = 2` runs are from 2026-11-20 and earlier, with an older
+firmware.)
 
 ## Regenerate the figures
 
@@ -222,10 +285,11 @@ APP_DIR="$PWD/pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_sequential"
 pulp/.venv/bin/python "$APP_DIR/plot.py"
 ```
 
-`plot.py` reads `assets/data/` and writes every chart into `assets/figures/`;
-`simulator_fixes.png` also needs `bandwidth_ccds2.csv` and
-`bandwidth_sync_router_ccds2.csv`, the 2026-11-20 and earlier runs. For a new
-run, `plot.py "$RUN_DIR"` draws the charts next to its CSVs (`--output-dir`
-changes this) and skips those whose CSVs are missing; the fit needs the
-64/128/256 KiB points. All DRAM sweep charts share
+`plot.py` reads `assets/data/` and writes every chart into `assets/figures/`.
+`read_chunks.png` also needs `bandwidth_whole_burst.csv`, the same firmware run
+with `--config-opt system/idma_read_chunk=0`; `simulator_fixes.png` also needs
+`bandwidth_ccds2.csv` and `bandwidth_sync_router_ccds2.csv`, the 2026-11-20
+and earlier runs. For a new run, `plot.py "$RUN_DIR"` draws the charts next to
+its CSVs (`--output-dir` changes this) and skips those whose CSVs are missing;
+the fit needs the 64/128/256 KiB points. All DRAM sweep charts share
 [dram_common/plot_sweep.py](../dram_common/plot_sweep.py).

@@ -4,7 +4,6 @@
 
   bandwidth.png               end-to-end bandwidth, fitted latency-bandwidth model
   dram_vs_end_to_end.png      DRAM data-bus vs end-to-end bandwidth (needs dram.csv)
-  fixed_cost.png              time of a sample outside the DRAM bus window (dram.csv)
   time_breakdown.png          where the time of a sample goes (dram.csv)
   ccds.png                    end to end, tCCD_S = 2 vs 4 (needs bandwidth_ccds2.csv)
   ccds_bus.png                DRAM data bus, tCCD_S = 2 vs 4 (dram.csv, dram_ccds2.csv)
@@ -59,22 +58,23 @@ def main():
         out / "bandwidth.png",
         f"Single cluster, local HBM: pipelined DMA reads ({CONFIGURATION})",
         plot.PIPELINED,
-        f"End to end, {LABEL}, median and min-max of 3",
+        f"End to end, {LABEL}",
         with_fit=True,
         with_floor=True,
     )
     print(f"Plateau from {onset} bytes")
     alpha, limit = plot.fit(curve)
     print(f"Fit on 64-256 KiB: alpha = {alpha:.3f} ns per copy, B = {limit:.6f} GB/s")
-    floor, small_alpha = plot.floor_fit(curve, limit)
-    print(
-        f"Floor = {floor:.3f} ns, fixed cost from {small_alpha:.3f} ns at 512 B to alpha at 4 KiB, per copy"
-    )
+    floor = plot.floor_fit(curve)
+    print(f"Floor = {floor:.3f} ns per copy")
     for row in curve:
-        model = plot.model_time(row["bytes"], alpha, limit, floor, small_alpha)
+        measured = row["median_ns_per_transfer"]
+        plain = plot.model_time(row["bytes"], alpha, limit)
+        model = plot.model_time(row["bytes"], alpha, limit, floor)
         print(
-            f"  {row['bytes']:>7} B: measured {row['median_ns_per_transfer']:9.3f} ns,"
-            f" floor model {model:9.3f} ns ({100 * (row['median_ns_per_transfer'] / model - 1):+.1f}%)"
+            f"  {row['bytes']:>7} B: measured {measured:9.3f} ns,"
+            f" alpha-beta {plain:9.3f} ns ({100 * (measured / plain - 1):+.1f}%),"
+            f" floor model {model:9.3f} ns ({100 * (measured / model - 1):+.1f}%)"
         )
     samples = None
     if (data / "dram.csv").exists():
@@ -86,11 +86,6 @@ def main():
             f"Pipelined reads: DRAM data bus vs end to end ({CONFIGURATION})",
             plot.PIPELINED,
             LABEL,
-        )
-        plot.fixed_cost_figure(
-            samples,
-            out / "fixed_cost.png",
-            f"Pipelined reads: time outside the DRAM bus window ({CONFIGURATION})",
         )
         plot.breakdown_figure(
             samples,

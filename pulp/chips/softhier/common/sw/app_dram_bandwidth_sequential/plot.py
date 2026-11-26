@@ -4,11 +4,12 @@
 
   bandwidth.png           end-to-end bandwidth, fitted latency-bandwidth model
   dram_vs_end_to_end.png  DRAM data-bus vs end-to-end bandwidth (needs dram.csv)
-  fixed_cost.png          time of a sample outside the DRAM bus window (dram.csv)
   time_breakdown.png      where the time of a sample goes (dram.csv)
+  read_chunks.png         the iDMA writing whole bursts vs 512 B chunks to the TCDM
+                          (needs bandwidth_whole_burst.csv)
   simulator_fixes.png     the same sweep before and after each simulator fix
-                          (needs bandwidth_sync_router_ccds2.csv and
-                          bandwidth_ccds2.csv)
+                          (needs bandwidth_whole_burst.csv,
+                          bandwidth_sync_router_ccds2.csv and bandwidth_ccds2.csv)
 
 Figures whose inputs are missing are skipped.
 """
@@ -52,7 +53,7 @@ def main():
         out / "bandwidth.png",
         f"Single cluster, local HBM: sequential DMA reads ({CONFIGURATION})",
         plot.SEQUENTIAL,
-        f"End to end, {LABEL}, median and min-max of 3",
+        f"End to end, {LABEL}",
         with_fit=True,
     )
     alpha, limit = plot.fit(curve)
@@ -67,28 +68,43 @@ def main():
             plot.SEQUENTIAL,
             LABEL,
         )
-        plot.fixed_cost_figure(
-            samples,
-            out / "fixed_cost.png",
-            f"Sequential reads: time outside the DRAM bus window ({CONFIGURATION})",
-        )
         plot.breakdown_figure(
             samples,
             out / "time_breakdown.png",
             f"Sequential reads: where the time of a sample goes ({CONFIGURATION})",
         )
-    older = [data / "bandwidth_sync_router_ccds2.csv", data / "bandwidth_ccds2.csv"]
-    if all(path.exists() for path in older):
+    whole = data / "bandwidth_whole_burst.csv"
+    if whole.exists():
         plot.comparison_figure(
             [
-                ("Final: asynchronous router, tCCD_S = 4", curve, plot.SEQUENTIAL, "o"),
+                ("TCDM written in 512 B chunks (now)", curve, plot.SEQUENTIAL, "o"),
+                (
+                    "TCDM written once the whole burst is read",
+                    plot.load_curve(whole),
+                    plot.OLDER[0],
+                    "s",
+                ),
+            ],
+            out / "read_chunks.png",
+            f"Sequential reads before and after the iDMA read fix ({CONFIGURATION})",
+        )
+    older = [data / "bandwidth_sync_router_ccds2.csv", data / "bandwidth_ccds2.csv"]
+    if whole.exists() and all(path.exists() for path in older):
+        plot.comparison_figure(
+            [
+                (
+                    "Final: asynchronous router, tCCD_S = 4, 512 B chunks",
+                    curve,
+                    plot.SEQUENTIAL,
+                    "o",
+                ),
+                ("Asynchronous router, tCCD_S = 4", plot.load_curve(whole), plot.OLDER[2], "D"),
                 ("Asynchronous router, tCCD_S = 2", plot.load_curve(older[1]), plot.OLDER[0], "s"),
                 ("Synchronous router, tCCD_S = 2", plot.load_curve(older[0]), plot.OLDER[1], "^"),
             ],
             out / "simulator_fixes.png",
             "Sequential reads before and after each simulator fix",
         )
-
 
 if __name__ == "__main__":
     main()
