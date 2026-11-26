@@ -318,6 +318,9 @@ void IDmaBeAxi::write_data_ack(uint8_t *data)
         delete req;
         if (--this->read_chunks_left[burst->id] > 0)
         {
+            // The burst is not free yet, but the TCDM side is: a chunk that arrived while it
+            // was busy waits in read_waiting_bursts, and only this event delivers it.
+            this->fsm_event.enqueue();
             return;
         }
         req = burst;
