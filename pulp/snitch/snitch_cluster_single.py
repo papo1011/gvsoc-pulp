@@ -19,7 +19,6 @@ try:
 except ImportError:
     from typing_extensions import override  # Python 3.10–3.11
 
-import os
 
 import gvsoc.runner
 import pulp.snitch.snitch_core as iss
@@ -84,17 +83,8 @@ class Soc(st.Component):
             cast=str
         )
 
-        # With the legacy gvsoc launcher, configure() is never called and the binary comes
-        # from the command line, so it must be resolved now. With gvrun, it comes from a
-        # parameter and is handled in configure() since it can also be set from the build
-        # process.
+        # The binary is set in configure(), from the binary parameter.
         binary = None
-        if os.environ.get('USE_GVRUN') is None and parser is not None:
-            parser.add_argument("--isa", dest="isa", type=str, default="rv32imfdca",
-                help="RISCV-V ISA string (default: %(default)s)")
-
-            [args, __] = parser.parse_known_args()
-            binary = args.binary
 
         # Memory Components
         # rom = memory.Memory(self, 'rom', size=0x10000, width_log2=3, stim_file=self.get_file_path('pulp/chips/spatz/rom.bin'))
@@ -253,11 +243,8 @@ class Soc(st.Component):
 
             tohost_addr, fromhost_addr, entry = _get_elf_info(binary)
             for watchpoint in self.bus_watchpoints:
-                watchpoint.add_properties({
-                    'riscv_fesvr_tohost_addr': tohost_addr,
-                    'riscv_fesvr_fromhost_addr': fromhost_addr,
-                })
-            self.cluster_registers.add_properties({'boot_addr': entry})
+                watchpoint.set_fesvr_addresses(tohost_addr, fromhost_addr)
+            self.cluster_registers.get_config().boot_addr = entry
 
     def handle_binary(self, binary: str):
         # This gets called when an executable is attached to a hierarchy of components containing
@@ -279,6 +266,9 @@ class SnitchSystem(st.Component):
 
 
 class Target(gvsoc.Target):
+    # Every component is configured from the compiled platform tree
+    json_config = False
+
 
     gapy_description="Snitch virtual board"
     model = SnitchSystem

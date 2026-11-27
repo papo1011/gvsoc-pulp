@@ -25,6 +25,8 @@
 #pragma once
 
 #include "floonoc_collective_policy.hpp"
+#include <vp/vp.hpp>
+#include <pulp/floonoc/floonoc/floo_noc_config.hpp>
 #include <cpu/iss/flexfloat/flexfloat.h>
 #include <unordered_map>
 #include <vector>
@@ -90,6 +92,8 @@ class Entry
 class FlooNoc : public vp::Component
 {
   public:
+    FlooNocConfig cfg;
+
     FlooNoc(vp::ComponentConf &config);
     ~FlooNoc();
 
@@ -121,7 +125,7 @@ class FlooNoc : public vp::Component
            // Needed by collective fan-out, which is relative to both source
            // and destination (unicast routing only ever needs REQ_DEST_ID).
     static constexpr int REQ_COLL_OP =
-        7; // [Collective Only] Collective operation code for this request, 
+        7; // [Collective Only] Collective operation code for this request,
            // 0 (COLL_OP_UNICAST) for a normal, non-collective request.
     static constexpr int REQ_COLL_MASK =
         8; // [Collective Only] Mask for collective primitives.
@@ -162,7 +166,7 @@ class FlooNoc : public vp::Component
 
     // [Collective Only] REQ_COLL_MASK Format: we divide the mask into sub-masks,
     // one per axis (XY in 2D, XYZ in 3D, or leaf-index ranges in a tree).
-    // We assume 16 bits are enough to index within an axis. 
+    // We assume 16 bits are enough to index within an axis.
     // Sub-masks are packed as bits [16*i, 16*i+16): 0-15 for axis 0, 16-31 for axis 1, etc.
     // The collective routing policy determines how these sub-masks are used.
     static constexpr int COLL_MASK_AXIS_BITS = 16;
@@ -198,7 +202,7 @@ class FlooNoc : public vp::Component
     int router_degrees;
     std::vector<std::vector<int>> links; // source node, dest node, latency
 
-    // Topology-specific collective fan-out policy, nullptr when disabled 
+    // Topology-specific collective fan-out policy, nullptr when disabled
     CollectiveRoutingPolicy *collective_policy = nullptr;
 
     // [Collective Only] Handles the completion of a collective request

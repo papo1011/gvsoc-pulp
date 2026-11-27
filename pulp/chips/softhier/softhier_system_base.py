@@ -84,14 +84,8 @@ class SoftHierSystem(gvsoc.systree.Component):
         )
 
         # Get Binary.
-        # With the legacy gvsoc launcher, configure() is never called and the binary comes
-        # from the command line, so it must be resolved now. With gvrun, it comes from a
-        # parameter and is handled in configure() since it can also be set from the build
-        # process.
+        # The binary is set in configure(), from the binary parameter.
         binary = None
-        if os.environ.get('USE_GVRUN') is None and parser is not None:
-            [args, otherArgs] = parser.parse_known_args()
-            binary = args.binary
 
         _assert_topology_dimensions(arch)
 
@@ -247,10 +241,8 @@ class SoftHierSystem(gvsoc.systree.Component):
             wide_base = arch.cluster_tcdm_remote + cluster_id * arch.cluster_tcdm_size
             wide_name = cluster_list[cluster_id].i_WIDE_INPUT().component.name
 
-            noc.get_property('mappings')[f"wide_{wide_name}"] = {
-                'base': wide_base, 'size': arch.cluster_tcdm_size, 'node_id': ni_node_id,
-                'remove_offset': wide_base
-            }
+            noc.add_mapping(f"wide_{wide_name}", base=wide_base, size=arch.cluster_tcdm_size,
+                node_id=ni_node_id, remove_offset=wide_base)
             noc.o_WIDE_BIND(cluster_list[cluster_id].i_WIDE_INPUT(), ni_node_id)
 
         if getattr(arch, 'num_cluster_x', None) is not None:
@@ -270,9 +262,8 @@ class SoftHierSystem(gvsoc.systree.Component):
 
                 wide_name = hbm_input.component.name
 
-                noc.get_property('mappings')[f"wide_{wide_name}"] = {
-                    'base': hbm_base, 'size': arch.hbm_node_addr_space,
-                    'node_id': ni_node_id, 'remove_offset': hbm_base}
+                noc.add_mapping(f"wide_{wide_name}", base=hbm_base, size=arch.hbm_node_addr_space,
+                    node_id=ni_node_id, remove_offset=hbm_base)
 
                 noc.o_WIDE_BIND(hbm_input, ni_node_id)
 

@@ -39,6 +39,9 @@ def _rtl_simulator(args):
 
 
 class Target(gvsoc.Target):
+    # Every component is configured from the compiled platform tree
+    json_config = False
+
 
     gapy_description="Pulp-open virtual board"
     model = Pulp_open_board
@@ -64,6 +67,11 @@ class Target(gvsoc.Target):
         super(Target, self).__init__(parser, options,
             model=model, name=name)
 
+        if peek_args.platform == 'rtl' and self.lists_components():
+            # The build only lists the components of the RTL board: the RTL
+            # simulator and the compiled design are only needed to run it
+            return
+
         simulator = _rtl_simulator(self.args)
         if simulator is not None:
             self.model.work_dir = os.path.abspath(self.args.work_dir or os.getcwd())
@@ -74,7 +82,9 @@ class Target(gvsoc.Target):
                 raise RuntimeError(
                     'pulp-open (rtl, gvsoc_svsim): gvsoc_svsim plugin not found (set GVSOC_SVSIM_PLUGIN, '
                     'or build the SDK with tools/hdlsim: <install>/lib/libgvsoc_elab.so)')
-            design = self.model.get_parameter('design') or rtl.svsim_design()
+            cluster = self.model.get_attributes().cluster
+            design = self.model.get_parameter('design') or rtl.svsim_design(
+                int(cluster.nb_fpu), int(cluster.fp32_latency))
             if not os.path.exists(os.path.join(design, 'manifest')):
                 raise RuntimeError(f'pulp-open (rtl, gvsoc_svsim): no compiled design at {design}; '
                                    'build it with: make test.build.pulp-rtl')

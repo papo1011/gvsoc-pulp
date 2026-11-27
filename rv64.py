@@ -19,7 +19,6 @@ try:
 except ImportError:
     from typing_extensions import override  # Python 3.10–3.11
 
-import os
 
 import cpu.iss_v2.riscv as iss
 from cpu.iss_v2.riscv_config import RiscvConfig
@@ -57,26 +56,10 @@ class Soc(st.Component):
             cast=str
         )
 
-        # With the legacy gvsoc launcher, configure() is never called and options come
-        # from the command line, so they must be resolved now. With gvrun, they come
-        # from parameters, the binary being handled in configure() since it can also
-        # be set from the build process.
+        # The binary is set in configure(), from the binary parameter.
         binary = None
         htif_args = []
-        if os.environ.get('USE_GVRUN') is None and parser is not None:
-            parser.add_argument("--isa", dest="isa", type=str, default="rv64imafdc",
-                help="RISCV-V ISA string (default: %(default)s)")
-
-            parser.add_argument("--arg", dest="args", action="append",
-                help="Specify application argument (passed to main)")
-
-            [args, __] = parser.parse_known_args()
-            binary = args.binary
-            isa = args.isa
-            if args.args is not None:
-                htif_args = args.args
-        else:
-            isa = self.get_parameter('isa')
+        isa = self.get_parameter('isa')
 
         # Zero-latency interconnect and memories, the core timing being the only one
         mem = Memory(self, 'mem', config=MemoryV3Config(size=0x80000000, atomics=True,
@@ -105,7 +88,7 @@ class Soc(st.Component):
             core_config.memory_size = 0x80000000
         host = iss.Riscv(self, 'host', timed=timed, binaries=[binary] if binary else [],
             config=core_config)
-        host.add_property('args', htif_args)
+        host.set_args(htif_args)
 
         loader = ElfLoader(self, 'loader', binary=binary)
 
@@ -140,7 +123,7 @@ class Soc(st.Component):
 
         args = self.get_parameter('args')
         if args is not None:
-            self.host.add_property('args', args.split())
+            self.host.set_args(args.split())
 
     def handle_binary(self, binary: str):
         # This gets called when an executable is attached to a hierarchy of components containing
@@ -165,6 +148,9 @@ class Rv64(st.Component):
 
 
 class Target(gvsoc.Target):
+    # Every component is configured from the compiled platform tree
+    json_config = False
+
 
     gapy_description="RV64 virtual board"
     model = Rv64

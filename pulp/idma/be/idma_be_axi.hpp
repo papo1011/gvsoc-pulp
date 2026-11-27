@@ -41,10 +41,15 @@ public:
      * @brief Construct a new AXI backend
      *
      * @param idma The top iDMA block.
+     * @param cfg The configuration of the top iDMA block.
      * @param itf_name Name of the AXI interface where the backend should send requests.
      * @param be The top backend.
+     * @param wait_grant After a denied read burst, wait for the grant before sending the next one.
+     * @param in_order_reads Push the data of the read bursts in issue order, instead of in the
+     *  order of their responses.
      */
-    IDmaBeAxi(vp::Component *idma, std::string itf_name, IdmaBeProducer *be);
+    IDmaBeAxi(vp::Component *idma, const IdmaConfig &cfg, std::string itf_name, IdmaBeProducer *be,
+        bool wait_grant=false, bool in_order_reads=false);
 
     /**
      * @brief Destroy an AXI backend
@@ -52,6 +57,8 @@ public:
     ~IDmaBeAxi();
 
     void reset(bool active) override;
+    // Set the top back-end, when it is created after this one
+    void set_be(IdmaBeProducer *be) { this->be = be; }
 
     void update();
     void read_burst(IdmaTransfer *transfer, uint64_t base, uint64_t size) override;
@@ -68,6 +75,8 @@ private:
     static void fsm_handler(vp::Block *__this, vp::ClockEvent *event);
     // Called when an asynchronous response is received from AXI
     static void axi_response(vp::Block *__this, vp::IoReq *req);
+    // Called when a denied request is granted, read bursts can be sent again (wait_grant)
+    static void axi_grant(vp::Block *__this, vp::IoReq *req);
     // Once a read burst is finished, it can be enqueued with this function so that it is
     // notified after the latency has elapsed
     void read_handle_req_end(vp::IoReq *req);
@@ -94,15 +103,25 @@ private:
     // Available bursts. Bursts can be allocated until this queue is empty
     std::queue<vp::IoReq *> free_bursts;
 
-    // Bursts which received a response but are waiting proper timestamp to take into
-    // account the returned latency
+    // Read bursts whose data is to be pushed to the destination, in this order, once the latency
+    // of their response has elapsed. They are queued when they get their response, or when they
+    // are sent with in_order_reads, since the destination consumes the data sequentially
     std::queue<vp::IoReq *> read_waiting_bursts;
+    // For each burst, tells if its read response has been received (in_order_reads)
+    std::vector<bool> read_responded;
+    // True when a read burst was denied by the interconnect: no read burst is sent until it is
+    // granted (wait_grant)
+    bool stalled;
+    // Wait for the grant of a denied read burst before sending the next one
+    bool wait_grant;
+    // Push the data of the read bursts in issue order
+    bool in_order_reads;
     // Bursts sent to destination backend are enqueued here until they are acknowledged and
     // released
     std::queue<vp::IoReq *> read_bursts_waiting_ack;
-    // Timestamps at which the requests of read_waiting_bursts can be considered as finished,
-    // in the same order
-    std::queue<int64_t> read_timestamps;
+    // Timestamp at which each responded request of read_waiting_bursts (a burst or a chunk)
+    // can be considered as finished
+    std::unordered_map<vp::IoReq *, int64_t> read_timestamps;
 
     // When non-zero, read bursts are sent to AXI as requests of at most this many bytes, so
     // that the first data can be written to the destination while the rest of the burst is

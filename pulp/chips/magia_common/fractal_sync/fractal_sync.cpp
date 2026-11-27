@@ -31,6 +31,7 @@
 
 #include "fractal_sync.hpp"
 #include <cmath>
+#include <pulp/chips/magia_common/fractal_sync/fractal_sync/fractal_sync_config.hpp>
 
 enum fractalsync_input_directions {
     NORD,
@@ -69,6 +70,7 @@ public:
     FractalSync(vp::ComponentConf &config);
 
 protected:    
+  FractalSyncConfig cfg;
     static void master_input_method(vp::Block *__this, PortResp<uint32_t> *req, int id);
     static void slave_input_method(vp::Block *__this, PortReq<uint32_t> *req, int id);
     static void fsm_handler(vp::Block *__this, vp::ClockEvent *event);
@@ -131,7 +133,7 @@ extern "C" vp::Component *gv_new(vp::ComponentConf &config)
 }
 
 FractalSync::FractalSync(vp::ComponentConf &config)
-    : vp::Component(config)
+    : vp::Component(config, this->cfg)
 {
     //Initialize interface
     this->traces.new_trace("trace", &this->trace, vp::DEBUG);
@@ -170,7 +172,7 @@ FractalSync::FractalSync(vp::ComponentConf &config)
     this->fsm_event = this->event_new(&FractalSync::fsm_handler);
 
 
-    this->level   = 1 << get_js_config()->get("level")->get_int(); //in one hot coding
+    this->level   = 1 << this->cfg.level; //in one hot coding
 
     this->directions[fractalsync_input_directions::NORD] = "NORD";
     this->directions[fractalsync_input_directions::SUD] = "SUD";
@@ -384,7 +386,7 @@ void FractalSync::fsm_handler(vp::Block *__this, vp::ClockEvent *event) {
             else if (_this->syncro_val_nord_sud[_this->sud_current_id_req]==2)
                 id_rsp_to_propagate=_this->sud_current_id_req;
             else
-                _this->trace.fatal("[FractalSync] INVALID FractalSync NORD_SUD_END_SYNCRO: %d\n", _this->state);
+                _this->trace.fatal("[FractalSync] INVALID FractalSync NORD_SUD_END_SYNCRO: %d\n", _this->state.get());
             _this->trace.msg(vp::Trace::LEVEL_TRACE,"[FractalSync] NORD-SUD level syncro completed - ENDING - [id-nord=%d,id-sud=%d]\n",id_rsp_to_propagate,id_rsp_to_propagate);
             _this->syncro_val_nord_sud[id_rsp_to_propagate]=0; //reset syncro val. Here nord and sud id req should be the same! 0 horizontal 1 vertical
             _this->state.set(IDLE); //go to idle when syncro is completed
@@ -432,7 +434,7 @@ void FractalSync::fsm_handler(vp::Block *__this, vp::ClockEvent *event) {
             else if (_this->syncro_val_east_west[_this->west_current_id_req]==2)
                 id_rsp_to_propagate=_this->west_current_id_req;
             else
-                _this->trace.fatal("[FractalSync] INVALID FractalSync EAST_WEST_END_SYNCRO: %d\n", _this->state);
+                _this->trace.fatal("[FractalSync] INVALID FractalSync EAST_WEST_END_SYNCRO: %d\n", _this->state.get());
             _this->trace.msg(vp::Trace::LEVEL_TRACE,"[FractalSync] EAST-WEST level syncro completed - ENDING - [id-east=%d,id-west=%d]\n",id_rsp_to_propagate,id_rsp_to_propagate);
             _this->syncro_val_east_west[id_rsp_to_propagate]=0; //reset syncro val. Here east and west id req should be the same! 0 horizontal 1 vertical
             _this->state.set(IDLE); //go to idle when syncro is completed
@@ -458,7 +460,7 @@ void FractalSync::fsm_handler(vp::Block *__this, vp::ClockEvent *event) {
             break;
         }
         default:
-            _this->trace.fatal("[FractalSync] INVALID FractalSync Status: %d\n", _this->state);
+            _this->trace.fatal("[FractalSync] INVALID FractalSync Status: %d\n", _this->state.get());
     }
 }
 

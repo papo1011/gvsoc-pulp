@@ -24,6 +24,7 @@
 #include <vp/itf/io.hpp>
 #include <vp/itf/wire.hpp>
 #include <iostream>
+#include <pulp/chips/softhier/common/softhier_ctrl/soft_hier_ctrl_config.hpp>
 
 void printProgressBar(int progress, int total, int width = 100)
 {
@@ -55,18 +56,22 @@ class SoftHierCtrl : public vp::Component
     static vp::IoReqStatus req(vp::Block *__this, vp::IoReq *req);
     void reset(bool active);
 
-    vp::Trace trace;
-    vp::IoSlave input_itf;
-    uint32_t num_cluster;
-    uint32_t num_core_per_cluster;
-    int64_t timer_start;
-    int64_t all_eoc_conuter;
+    SoftHierCtrlConfig      cfg;
+    vp::Trace               trace;
+    vp::IoSlave             input_itf;
+    uint32_t                num_cluster;
+    uint32_t                num_core_per_cluster;
+    int64_t                 timer_start;
+    int64_t                 all_eoc_conuter;
 };
 
-SoftHierCtrl::SoftHierCtrl(vp::ComponentConf &config) : vp::Component(config)
+
+
+SoftHierCtrl::SoftHierCtrl(vp::ComponentConf &config)
+    : vp::Component(config, this->cfg)
 {
-    this->num_cluster = this->get_js_config()->get("num_cluster")->get_int();
-    this->num_core_per_cluster = this->get_js_config()->get("num_core_per_cluster")->get_int();
+    this->num_cluster = this->cfg.num_cluster;
+    this->num_core_per_cluster = this->cfg.num_core_per_cluster;
 
     this->traces.new_trace("trace", &this->trace, vp::DEBUG);
     this->input_itf.set_req_meth(&SoftHierCtrl::req);

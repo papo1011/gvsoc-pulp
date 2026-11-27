@@ -45,10 +45,11 @@ public:
      * @brief Construct a new IDmaFeXdma frontend
      *
      * @param idma The top iDMA block.
+     * @param cfg The configuration of the top iDMA block.
      * @param fe The front end.
      * @param be The back end.
      */
-    IDmaMe2D(vp::Component *idma, IdmaTransferProducer *fe, IdmaTransferConsumer *be);
+    IDmaMe2D(vp::Component *idma, const IdmaConfig &cfg, IdmaTransferProducer *fe, IdmaTransferConsumer *be);
 
     void reset(bool active) override;
 
@@ -56,6 +57,8 @@ public:
     void enqueue_transfer(IdmaTransfer *transfer) override;
     void update() override;
     void ack_transfer(IdmaTransfer *transfer) override;
+    // Set the next stage, when it is created after this one
+    void set_be(IdmaTransferConsumer *be) { this->be = be; }
 
 
 private:

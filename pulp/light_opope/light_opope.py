@@ -1,0 +1,84 @@
+#
+# Copyright (C) 2026 ETH Zurich and University of Bologna
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+import os
+from typing import Annotated
+import gvsoc.systree
+from config_tree import Config, cfg_field
+from gvrun.runtime import Runtime
+
+
+class LightOpopeConfig(Config):
+    tcdm_bank_width: int = cfg_field(default=0, desc="Width of a TCDM bank, in bytes")
+    tcdm_bank_number: int = cfg_field(default=0, desc="Number of TCDM banks")
+    elem_size: int = cfg_field(default=0, desc="Size of an element, in bytes")
+    p: int = cfg_field(default=0, desc="Size of the p x p MAC array")
+    mac_latency: int = cfg_field(default=0, desc=(
+        "Pipeline drain charged after the last step of a tile"))
+    first_job_latency: int = cfg_field(default=0, desc=(
+        "Cycles before the first job starts (once per run)"))
+    queue_depth: int = cfg_field(default=0, desc=(
+        "Request queue entries (beats), held until the array uses the data"))
+    loc_base: int = cfg_field(default=0, fmt="hex", desc="Base address of the local memory")
+    # Taken from the environment of the run
+    report_jobs: Annotated[int, Runtime] = cfg_field(default=0, desc=(
+        "Print a [TE] line (start/end cycle) per job if not 0 (TE_REPORT environment variable)"))
+
+class LightOpope(gvsoc.systree.Component):
+    """Outer-product engine: p x p fp16 MACs, 2p x 16-bit memory port.
+
+    Drop-in replacement of LightRedmule (same ports and software interface),
+    except that X must be stored transposed (N x M). See light_opope.cpp.
+    """
+
+    def __init__(self,
+                parent: gvsoc.systree.Component,
+                name: str,
+                tcdm_bank_width: int,
+                tcdm_bank_number: int,
+                p: int,
+                elem_size: int=2,
+                mac_latency: int=0,   # pipeline drain charged after the last step of a tile
+                queue_depth: int=128, # request queue entries (beats), held until the array uses the data
+                first_job_latency: int=0, # cycles before the first job starts (once per run)
+                loc_base=0):
+
+        super().__init__(parent, name, config=LightOpopeConfig(
+            tcdm_bank_width=tcdm_bank_width, tcdm_bank_number=tcdm_bank_number,
+            elem_size=elem_size, p=p, mac_latency=mac_latency,
+            first_job_latency=first_job_latency, queue_depth=queue_depth, loc_base=loc_base,
+            # TE_REPORT=1: print a [TE] line (start/end cycle) per job
+            report_jobs=int(os.environ.get('TE_REPORT', 0))))
+
+        self.add_sources(['pulp/light_opope/light_opope.cpp', 'cpu/iss/flexfloat/flexfloat.c'])
+
+    def i_INPUT(self) -> gvsoc.systree.SlaveItf:
+        return gvsoc.systree.SlaveItf(self, 'input', signature='io')
+
+    def i_INPUT_V2(self) -> gvsoc.systree.SlaveItf:
+        return gvsoc.systree.SlaveItf(self, 'input_v2', signature='io')
+
+    def i_OFFLOAD(self) -> gvsoc.systree.SlaveItf:
+        return gvsoc.systree.SlaveItf(self, 'offload', signature='wire<IssOffloadInsn<uint32_t>*>')
+
+    def o_OFFLOAD_GRANT(self, itf: gvsoc.systree.SlaveItf):
+        self.itf_bind('offload_grant', itf, signature='wire<IssOffloadInsnGrant<uint32_t>*>')
+
+    def o_TCDM(self, itf: gvsoc.systree.SlaveItf):
+        self.itf_bind('tcdm', itf, signature='io')
+
+    def o_IRQ(self, itf: gvsoc.systree.SlaveItf):
+        self.itf_bind('done_irq', itf, signature='wire<bool>')

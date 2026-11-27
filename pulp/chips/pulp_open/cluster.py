@@ -14,7 +14,6 @@
 # limitations under the License.
 #
 
-import os
 import gvsoc.systree as st
 import pulp.cpu.iss.pulp_cores as iss
 from cache.hierarchical_cache import Hierarchical_cache
@@ -84,8 +83,10 @@ class Cluster(st.Component):
 
     """
 
-    def __init__(self, parent, name, config_file, cid: int=0, pulpnn=False):
-        super(Cluster, self).__init__(parent, name, config=ClusterConfig())
+    def __init__(self, parent, name, config_file, cid: int=0, pulpnn=False, nb_fpu=4,
+            fp32_latency=0):
+        config = ClusterConfig()
+        super(Cluster, self).__init__(parent, name, config=config)
 
         #
         # Properties
@@ -102,13 +103,7 @@ class Cluster(st.Component):
 
         # The attribute overrides the chip description, which is what makes it possible to run the
         # same chip with both models and compare them.
-        if os.environ.get('USE_GVRUN') is None:
-            dma_model = self.declare_user_property(
-                name='dma_model', value=dma_model, cast=str,
-                description='Cluster DMA model, either mchan or idma'
-            )
-        else:
-            dma_model = self.get_property('dma_model') or dma_model
+        dma_model = config.dma_model or dma_model
 
         if dma_model not in ['mchan', 'idma']:
             raise RuntimeError(f'Unknown cluster DMA model: {dma_model}')
@@ -140,12 +135,7 @@ class Cluster(st.Component):
         first_external_pcer = 12
         has_ne16 = False       # Because RedMulE is alternative to NE16!!
 
-        if os.environ.get('USE_GVRUN') is None:
-            has_redmule = self.declare_user_property(
-                name='redmule', value=False, cast=bool, description='Enable Redmule'
-            )
-        else:
-            has_redmule = self.get_property('has_redmule')
+        has_redmule = config.has_redmule
 
         # How many banks one TCDM access of the DMA spans, as mem_to_banks does in the RTL. The
         # DMA interleaver of the L1 subsystem takes care of the split, so here it only sets the
@@ -165,7 +155,8 @@ class Cluster(st.Component):
         # Cores
         pes = []
         for i in range(0, nb_pe):
-            pes.append(iss.ClusterCore(self, 'pe%d' % i, cluster_id=cid, core_id=i, pulpnn=pulpnn))
+            pes.append(iss.ClusterCore(self, 'pe%d' % i, cluster_id=cid, core_id=i, pulpnn=pulpnn,
+                nb_fpu=nb_fpu, fp32_latency=fp32_latency))
 
         # Icache
         icache = Hierarchical_cache(self, 'icache', cluster_conf.get_property('icache/config'))

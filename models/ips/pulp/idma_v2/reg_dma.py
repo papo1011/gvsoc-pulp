@@ -140,16 +140,12 @@ class RegDmaV2(gvsoc.systree.Component):
     __gvsoc_doc__ = {
         'title': 'iDMA (v2)',
         'static_page': '../ips/pulp/idma_v2',
-        'tests_dirs': [
-            {'dir':       'gvsoc/pulp/tests/idma_v2',
-             'component': 'ips.pulp.idma_v2.reg_dma'},
-        ],
     }
 
     def __init__(self, parent: gvsoc.systree.Component, name: str, config: RegDmaConfig,
     ):
 
-        super().__init__(parent, name)
+        super().__init__(parent, name, config=config)
 
         self.add_sources([
             'ips/pulp/idma_v2/reg_dma.cpp',
@@ -158,13 +154,6 @@ class RegDmaV2(gvsoc.systree.Component):
             'ips/pulp/idma_v2/be/idma_be.cpp',
             'ips/pulp/idma_v2/be/idma_be_axi.cpp',
         ])
-
-        self.add_properties({
-            "transfer_queue_size": config.transfer_queue_size,
-            "burst_queue_size": config.burst_queue_size,
-            "burst_size" : config.burst_size,
-            "axi_width": config.axi_width,
-        })
 
         # Remember axi_width on the Python object — the o_AXI_* methods
         # declare beat-mode bindings against this.

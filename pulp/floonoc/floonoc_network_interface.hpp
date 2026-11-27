@@ -40,7 +40,8 @@ class NetworkQueue : public FloonocNode
     friend class NetworkInterface;
 
   public:
-    NetworkQueue(NetworkInterface &ni, std::string name, uint64_t width, bool is_wide);
+    NetworkQueue(NetworkInterface &ni, std::string name, uint64_t width,
+                 bool is_wide);
     void reset(bool active) override;
 
     void check();
@@ -50,10 +51,12 @@ class NetworkQueue : public FloonocNode
     void handle_rsp(vp::IoReq *req, bool is_address);
 
   private:
-    void enqueue_router_req(vp::IoReq *req, bool is_address, bool wide, bool is_req);
+    void enqueue_router_req(vp::IoReq *req, bool is_address, bool wide,
+                            bool is_req);
     void send_router_req();
     void unstall_queue(int from_id) override;
-    bool handle_request(FloonocNode *node, vp::IoReq *req, int from_id) override;
+    bool handle_request(FloonocNode *node, vp::IoReq *req,
+                        int from_id) override;
     // [Collective Only] Injects an already fully-tagged collective packet
     // directly, bypassing enqueue_router_req()'s. Used to inject a reduction-ack.
     void push_collective_req(vp::IoReq *router_req);
@@ -106,7 +109,8 @@ class NetworkInterface : public FloonocNode
 
     // This gets called by a router when the destination is reached and the
     // request is sent from the router to the network interface
-    bool handle_request(FloonocNode *node, vp::IoReq *req, int from_id) override;
+    bool handle_request(FloonocNode *node, vp::IoReq *req,
+                        int from_id) override;
     // Returns the id of the network interface
     int get_id();
     // This gets called by the top noc to grant a a request denied by a target

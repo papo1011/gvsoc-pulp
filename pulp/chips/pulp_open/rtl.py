@@ -59,9 +59,18 @@ def rtl_home():
     return home
 
 
-def svsim_design():
-    """The design compiled for gvsoc_svsim by test.build.pulp-rtl."""
-    return os.path.join(rtl_home(), 'work', 'svsim', 'pulp.hsim')
+def svsim_name(nb_fpu=4, fp32_latency=0):
+    """The directory, in work, of the design compiled for gvsoc_svsim with these
+    FPUs (attributes cluster/nb_fpu and cluster/fp32_latency, flist.py
+    --nb-fpu and --fp32-latency): svsim for those of pulp-platform/pulp."""
+    if (nb_fpu, fp32_latency) == (4, 0):
+        return 'svsim'
+    return f'svsim_fpu{nb_fpu}_lat{fp32_latency}'
+
+
+def svsim_design(nb_fpu=4, fp32_latency=0):
+    """The design compiled for gvsoc_svsim by test.build.pulp-rtl with these FPUs."""
+    return os.path.join(rtl_home(), 'work', svsim_name(nb_fpu, fp32_latency), 'pulp.hsim')
 
 
 def svsim_plugin():
@@ -154,8 +163,8 @@ def make_board():
                 self.set_parameter('exit_signal', 'tb_pulp.exit_status')
             super().configure()
             if self._elf is not None and os.path.exists(self._elf):
-                self.verilator.add_property(
-                    'plusargs', list(self.verilator.properties.get('plusargs', [])) +
+                self.verilator.set_plusargs(
+                    self.verilator.get_plusargs() +
                     plusargs(self._elf, self.work_dir))
 
         def elf(self):
