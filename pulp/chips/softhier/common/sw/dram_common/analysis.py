@@ -9,6 +9,27 @@ from pathlib import Path
 from statistics import median
 
 
+# Reads of one sample (time window and address range) with their row openings,
+# for the query_dram.py scripts that count them. A row opening (ACT) is recorded
+# as a phase of the transaction that needed it, so ACT / RD is the row miss rate.
+ROW_QUERY = """
+SELECT COUNT(DISTINCT t.ID), SUM(CASE WHEN p.PhaseName IN ('RD', 'RDA') THEN t.DataLength END),
+       SUM(p.PhaseName = 'ACT'),
+       MIN(CASE WHEN p.PhaseName IN ('RD', 'RDA') THEN p.DataStrobeBegin END),
+       MAX(CASE WHEN p.PhaseName IN ('RD', 'RDA') THEN p.DataStrobeEnd END),
+       COUNT(DISTINCT CASE WHEN p.PhaseName IN ('RD', 'RDA')
+                      THEN p.Rank || '-' || p.BankGroup || '-' || p.Bank END),
+       COUNT(DISTINCT CASE WHEN p.PhaseName IN ('RD', 'RDA')
+                      THEN p.Rank || '-' || p.BankGroup END),
+       SUM(t.Command != 'R')
+FROM Transactions AS t
+JOIN Phases AS p ON p.Transact = t.ID
+WHERE t.Command IN ('R', 'W')
+  AND t.TimeOfGeneration >= ? AND t.TimeOfGeneration < ?
+  AND t.Address >= ? AND t.Address < ?
+"""
+
+
 def require_success(log, name, prefix):
     if f"{prefix} errors=0" not in log or f"{name}: OK" not in log or f"{name}: FAILED" in log:
         raise ValueError("Expected a successful data check")

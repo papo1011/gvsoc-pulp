@@ -44,7 +44,7 @@
    pulp/pulp/chips/softhier/common/sw/app_example
    ```
 
-   Two HBM benchmarks are available:
+   Three HBM benchmarks are available:
 
    - [`app_dram_bandwidth_sequential`](common/sw/app_dram_bandwidth_sequential/README.md):
      one cluster reading local HBM, one DMA copy at a time, doubling the size
@@ -52,15 +52,19 @@
    - [`app_dram_bandwidth_pipelined`](common/sw/app_dram_bandwidth_pipelined/README.md):
      contiguous reads from 4 B to 1 MiB with eight DMA copies in flight, to
      find the sustained read plateau, with DRAM-bus vs end-to-end figures.
+   - [`app_dram_bandwidth_matmul`](common/sw/app_dram_bandwidth_matmul/README.md):
+     the tile loads of a matmul, 2D DMA reads of row-major matrices with the
+     row lengths of Llama-3-8B, for tiles 16 to 1024 values wide.
 
    Select one when building the software:
 
    ```bash
    make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_sequential
    make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_pipelined
+   make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_matmul
    ```
 
-   Without `app=...`, `sh-sw` builds `app_example`. Both DRAM apps initialize
+   Without `app=...`, `sh-sw` builds `app_example`. The DRAM apps initialize
    their own data and do not need `sh-data`.
 
    An earlier app, `app_dram`, compared the local HBM channel with the farthest
