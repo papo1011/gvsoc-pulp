@@ -44,7 +44,7 @@
    pulp/pulp/chips/softhier/common/sw/app_example
    ```
 
-   Three HBM benchmarks are available:
+   Four HBM benchmarks are available:
 
    - [`app_dram_bandwidth_sequential`](common/sw/app_dram_bandwidth_sequential/README.md):
      one cluster reading local HBM, one DMA copy at a time, doubling the size
@@ -55,6 +55,10 @@
    - [`app_dram_bandwidth_matmul`](common/sw/app_dram_bandwidth_matmul/README.md):
      the tile loads of a matmul, 2D DMA reads of row-major matrices with the
      row lengths of Llama-3-8B, for tiles 16 to 1024 values wide.
+   - [`app_dram_bandwidth_embeddings`](common/sw/app_dram_bandwidth_embeddings/README.md):
+     the embedding lookup of an LLM, one table row per token in token order,
+     whole rows or the slice one channel holds when the table is split by
+     columns.
 
    Select one when building the software:
 
@@ -62,6 +66,7 @@
    make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_sequential
    make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_pipelined
    make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_matmul
+   make sh-sw TOPOLOGY=2d_mesh app=pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_embeddings
    ```
 
    Without `app=...`, `sh-sw` builds `app_example`. The DRAM apps initialize
