@@ -349,7 +349,7 @@ def breakdown_figure(samples, output, title):
         labels=(
             "DRAM bus transferring data",
             "DRAM bus idle between the first and last burst",
-            "Before the first burst and after the last (on-chip path)",
+            "Before the first burst and after the last",
         ),
     )
     size_axis(ax)

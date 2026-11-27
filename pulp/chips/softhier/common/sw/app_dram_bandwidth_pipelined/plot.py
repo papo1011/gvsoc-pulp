@@ -5,8 +5,8 @@
   bandwidth.png               end-to-end bandwidth, fitted latency-bandwidth model
   dram_vs_end_to_end.png      DRAM data-bus vs end-to-end bandwidth (needs dram.csv)
   time_breakdown.png          where the time of a sample goes (dram.csv)
-  ccds.png                    end to end, tCCD_S = 2 vs 4 (needs bandwidth_ccds2.csv)
-  ccds_bus.png                DRAM data bus, tCCD_S = 2 vs 4 (dram.csv, dram_ccds2.csv)
+  timings.png                 HBM4 timings vs the old emulation timings
+                              (needs bandwidth_ccds4.csv)
   sequential_vs_pipelined.png  one vs eight copies in flight
                               (needs the sequential sweep's bandwidth.csv)
 
@@ -23,7 +23,7 @@ from dram_common import plot_sweep as plot
 HERE = Path(__file__).resolve().parent
 DATA, FIGURES = HERE / "assets/data", HERE / "assets/figures"
 LABEL = "pipelined (eight copies in flight)"
-CONFIGURATION = "asynchronous router, tCCD_S = 4"
+CONFIGURATION = "HBM4 timings"
 
 
 def main():
@@ -60,23 +60,17 @@ def main():
         plot.PIPELINED,
         f"End to end, {LABEL}",
         with_fit=True,
-        with_floor=True,
     )
     print(f"Plateau from {onset} bytes")
     alpha, limit = plot.fit(curve)
     print(f"Fit on 64-256 KiB: alpha = {alpha:.3f} ns per copy, B = {limit:.6f} GB/s")
-    floor = plot.floor_fit(curve)
-    print(f"Floor = {floor:.3f} ns per copy")
     for row in curve:
         measured = row["median_ns_per_transfer"]
-        plain = plot.model_time(row["bytes"], alpha, limit)
-        model = plot.model_time(row["bytes"], alpha, limit, floor)
+        model = plot.model_time(row["bytes"], alpha, limit)
         print(
             f"  {row['bytes']:>7} B: measured {measured:9.3f} ns,"
-            f" alpha-beta {plain:9.3f} ns ({100 * (measured / plain - 1):+.1f}%),"
-            f" floor model {model:9.3f} ns ({100 * (measured / model - 1):+.1f}%)"
+            f" model {model:9.3f} ns ({100 * (measured / model - 1):+.1f}%)"
         )
-    samples = None
     if (data / "dram.csv").exists():
         samples = plot.load_samples(data / "dram.csv")
         plot.dram_figure(
@@ -92,34 +86,15 @@ def main():
             out / "time_breakdown.png",
             f"Pipelined reads: where the time of a sample goes ({CONFIGURATION})",
         )
-    if (data / "bandwidth_ccds2.csv").exists():
+    old = data / "bandwidth_ccds4.csv"
+    if old.exists():
         plot.comparison_figure(
             [
-                ("End to end, tCCD_S = 4 (final)", curve, plot.PIPELINED, "o"),
-                (
-                    "End to end, tCCD_S = 2 (shared DRAMSys configuration)",
-                    plot.load_curve(data / "bandwidth_ccds2.csv"),
-                    plot.OLDER[0],
-                    "s",
-                ),
+                ("HBM4 timings (now)", curve, plot.PIPELINED, "o"),
+                ("Old emulation timings", plot.load_curve(old), plot.OLDER[0], "s"),
             ],
-            out / "ccds.png",
-            "Pipelined reads, asynchronous router: tCCD_S = 2 vs 4, end to end",
-        )
-    if samples and (data / "dram_ccds2.csv").exists():
-        plot.comparison_figure(
-            [
-                ("DRAM data bus, tCCD_S = 4 (final)", plot.bus_rows(samples), plot.DRAM, "o"),
-                (
-                    "DRAM data bus, tCCD_S = 2 (shared DRAMSys configuration)",
-                    plot.bus_rows(plot.load_samples(data / "dram_ccds2.csv")),
-                    plot.OLDER[0],
-                    "s",
-                ),
-            ],
-            out / "ccds_bus.png",
-            "Pipelined reads, asynchronous router: tCCD_S = 2 vs 4, DRAM data bus",
-            value="bus_GB_per_s",
+            out / "timings.png",
+            "Pipelined reads: HBM4 timings vs the old emulation timings",
         )
     if (args.sequential / "bandwidth.csv").exists():
         plot.comparison_figure(

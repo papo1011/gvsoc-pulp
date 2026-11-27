@@ -2,20 +2,18 @@
 
 How fast can one cluster read from its local HBM channel if it waits for every
 copy before starting the next? The DM core of cluster 0 copies blocks from
-HBM 0 into TCDM, from **4 B to 1 MiB** (doubling each time: 19 sizes, three
-samples of eight copies each). The
+HBM 0 into TCDM, from **4 B to 1 MiB** (doubling each time: 19 sizes; 15
+samples of eight copies up to 8 KiB, 3 above). The
 [pipelined sweep](../app_dram_bandwidth_pipelined/README.md) does the same
 with eight copies in flight. (Until 2026-11-23 this app was called
 `app_dram_bandwidth_streaming`; older logs print `pattern=streaming` and are
 still accepted.)
 
-> **Simulator setup.** Asynchronous wide-port arbiter, iDMA writing read data
-> to TCDM in 512 B chunks, and DRAMSys with `CCDS = 4`. The earlier synchronous
-> arbiter capped large copies at about 57.9 GB/s, and the earlier iDMA added up
-> to 14 ns per copy after the DRAM had finished
-> ([Simulator fixes](#simulator-fixes)). The shared DRAMSys configuration's
-> `CCDS = 2` lets bursts overlap on the data bus and go past 64 GB/s
-> ([pipelined guide](../app_dram_bandwidth_pipelined/README.md#why-ccds--2-exceeded-64-gbs)).
+> **Simulator setup.** DRAMSys with the repository's HBM4 timings (from
+> Ramulator 2), asynchronous wide-port arbiter, and iDMA writing
+> read data to TCDM in 512 B chunks. Until 2026-11-26 the runs used the old
+> emulation timings, 4–5× shorter ([what changed](#hbm4-timings-vs-the-old-ones));
+> the [simulator fixes](#simulator-fixes) were measured with those.
 
 ## What is measured
 
@@ -29,6 +27,8 @@ time A, A+N, A+2N, ..., A+7N   (one copy in flight)
 **bandwidth = 8 × block size / elapsed time**, including DMA issue, waits and
 clock reads; setup, checks and printing are untimed. Every sample reads its own
 window, so no block is read twice (consecutive blocks can still hit open rows).
+Before each sample, an untimed pseudo-random wait of 0–3.9 µs keeps the samples
+from locking onto the DRAM refresh ([why](#why-small-copies-are-noisy)).
 
 Before timing, untimed DMA writes fill the source with a pattern and tag each
 block with its address, then a 100 µs wait lets them drain. After timing, the
@@ -39,12 +39,15 @@ offset `0x20000`; a 1 MiB copy uses the whole TCDM. Buffer layout:
 ## Build and run
 
 From the SDK root, after the [SoftHier setup](../../../README.md); the
-simulation takes about 15 minutes. For `CCDS = 4`, copy `dramsys_configs/` from
-where `DRAMSYS_PATH` points, set `"CCDS": 4` in
-`memspec/HBM4-emulation-4000.json`, and point `DRAMSYS_PATH` at the copy.
+simulation takes about 15 minutes. DRAMSys must read the repository's
+`dramsys_configs/` but not the prebuilt `libDRAMSys_Simulator.so` next to it,
+which is linked against SystemC 2.3.3: the first lines copy the configs alone.
 
 ```bash
 set -e
+mkdir -p .local-artifacts/dramsys
+cp -r add_dramsyslib_patches/dramsys_configs .local-artifacts/dramsys/
+export DRAMSYS_PATH="$PWD/.local-artifacts/dramsys"
 APP_DIR="$PWD/pulp/pulp/chips/softhier/common/sw/app_dram_bandwidth_sequential"
 make sh-hw TOPOLOGY=2d_mesh
 make sh-sw TOPOLOGY=2d_mesh app="$APP_DIR"
@@ -72,7 +75,7 @@ one HBM channel (two 32-bit pseudo-channels at 8 Gbit/s per pin);
 
 ## Results
 
-One run on 2026-11-25; all 57 samples passed the data check. Every chart has
+One run on 2026-11-27; all 201 samples passed the data check. Every chart has
 the block size on the horizontal axis, 4 B to 1 MiB. The numbers are in
 [bandwidth.csv](assets/data/bandwidth.csv) and [dram.csv](assets/data/dram.csv).
 
@@ -80,22 +83,26 @@ the block size on the horizontal axis, 4 B to 1 MiB. The numbers are in
 
 ![Sequential DMA read bandwidth](assets/figures/bandwidth.png)
 
-Blue is the bandwidth the core measures; the light band around it is the
-min–max of the three samples. The dashed line is the channel's peak, 64 GB/s,
-the grey area the plateau (every point within 5% of the best). The dotted
-curve is the model explained [below](#how-far-the-curve-is-from-a-simple-model).
+Blue is the bandwidth the core measures, the median of the samples of each
+size. The dashed line is the channel's peak, 64 GB/s, the grey area the plateau
+(every point within 5% of the best). The dotted curve is the model explained
+[below](#how-far-the-curve-is-from-a-simple-model).
+
+The light band goes from the slowest sample (bottom) to the fastest (top).
+**The bottom is a sample that met a DRAM refresh**, which stops the channel for
+up to 450 ns: at 1 KiB a sample lasts 0.46 µs and the one with a refresh
+0.90 µs, so the band reaches down to 9.2 GB/s against 17.9. The band is wide up
+to 8 KiB, where samples last less than 1.6 µs, and disappears from 16 KiB: a
+refresh weighs less on a longer sample, and DRAMSys postpones refreshes while
+the channel is busy ([more below](#why-small-copies-are-noisy)).
 
 **Small copies are slow, because each one waits for its whole round trip to
-the DRAM.** Bandwidth flattens from 64 KiB and reaches **63.86 GB/s at 1 MiB,
-99.8% of the peak**.
+the DRAM.** Bandwidth flattens from 128 KiB and reaches **63.61 GB/s at 1 MiB,
+99.4% of the peak**.
 
 | 1 KiB | 4 KiB | 16 KiB | 64 KiB | 1 MiB |
 | ---: | ---: | ---: | ---: | ---: |
-| 21.73 GB/s | 42.17 GB/s | 56.09 GB/s | 61.62 GB/s | 63.86 GB/s |
-
-Below 8 KiB the three samples of a size differ by up to 20%; from 32 KiB up
-they agree within 1%. The difference is DRAM refresh, explained
-[below](#why-small-copies-are-noisy).
+| 17.85 GB/s | 36.05 GB/s | 50.47 GB/s | 59.98 GB/s | 63.61 GB/s |
 
 ### How far the curve is from a simple model
 
@@ -107,49 +114,52 @@ $$
 T(N)=\alpha+\beta N
 $$
 
-On the 64, 128 and 256 KiB points it gives **`alpha = 37.125 ns` and
-`1/beta = 63.951 GB/s`** (64.05 ns per 4 KiB burst). **From 8 KiB up it is
-within 1% of every point**, including 512 KiB and 1 MiB, which were not in the
-fit. (With `CCDS = 2` the same fit gave 64.251 GB/s, above the peak.)
+On the 64, 128 and 256 KiB points it gives **`alpha = 68.125 ns` and
+`1/beta = 63.942 GB/s`** (64.06 ns per 4 KiB burst). **From 8 KiB up it is
+within 0.2% of every point**, including 512 KiB and 1 MiB, which were not in
+the fit.
+
+`alpha` was 37.125 ns with the old timings. The 31 ns more are the DRAM row: a
+large copy starts by closing the row left open in its bank and opening its own,
+and `tRP + tRCD + RL` went from 12.5 to 46 ns.
 
 Below 8 KiB the model is pessimistic: the copies are faster than predicted.
 
 | Block | Measured | Model |
 | ---: | ---: | ---: |
-| 4 B | 0.13 GB/s | 0.11 GB/s (+20%) |
-| 64 B | 1.85 GB/s | 1.68 GB/s (+10%) |
-| 512 B | 13.09 GB/s | 11.34 GB/s (+15%) |
-| 1 KiB | 21.73 GB/s | 19.27 GB/s (+13%) |
-| 4 KiB | 42.17 GB/s | 40.48 GB/s (+4%) |
-| 8 KiB | 49.91 GB/s | 49.58 GB/s (+0.7%) |
+| 4 B | 0.11 GB/s | 0.06 GB/s (+94%) |
+| 64 B | 1.13 GB/s | 0.93 GB/s (+22%) |
+| 512 B | 11.28 GB/s | 6.73 GB/s (+68%) |
+| 1 KiB | 17.85 GB/s | 12.17 GB/s (+47%) |
+| 4 KiB | 36.05 GB/s | 30.99 GB/s (+16%) |
+| 8 KiB | 41.66 GB/s | 41.74 GB/s (−0.2%) |
 
-The percentages are measured vs model. In time, a small copy costs 31–40 ns
-where the model says 37 ns. Part of it is probably the DRAM rows: up to 4 KiB
-a read can be served in 9.25 ns, from 8 KiB never under 12 ns, about one row
-activation (`tRCD`, 2.5 ns) more. Below 8 KiB the noise is about as large as
-the error, so a more detailed model would only fit the noise.
-
-The on-chip part, instead, is the same at every size: the time of a sample
-outside the DRAM's busy window (the first request travelling to the DRAM and
-the last data travelling back) is 43.5–45 ns from 4 B to 1 MiB. Before the
-[iDMA fix](#idma-read-data-in-chunks) it grew to 58.5 ns from 4 KiB.
+The percentages are measured vs model. **Small copies find their row already
+open.** A DRAM row holds 1 KiB, spread over 8 KiB of addresses (64 B every
+512 B), so consecutive small copies fall in the same rows and most of them skip
+the row change that every large copy pays: a 4 B copy takes 35 ns and a 1 KiB
+copy 57 ns, where the model says 68 and 84 ns.
 
 ### Why small copies are noisy
 
-DRAMSys refreshes the whole channel every 1.25 µs on average (`tREFI`), and a
-refresh blocks it for 65 ns (`tRFC`). The controller may postpone or pull in
-refreshes, so where they land depends on everything that ran before. A sample
-of eight small copies lasts 250–800 ns, so about one sample in two contains a
-refresh.
+Each pseudo-channel is refreshed every 3.9 µs (`tREFI`), and a refresh blocks
+it for 450 ns (`tRFC`); the two pseudo-channels take turns, so the channel
+meets a refresh every 1.95 µs. (The old timings had 65 ns every 1.25 µs.) In
+the DRAMSys database, 57 of the 180 samples up to 8 KiB had a refresh inside
+their window, which made them up to 0.5 µs slower (0.23 µs median); the others
+were within 60 ns of the fastest sample of their size.
 
-We checked it in the DRAMSys database of a full run. Up to 4 KiB, every sample
-more than 6 ns slower than the fastest of its size had a refresh inside its
-window. Samples hit by a refresh were 21–29 ns slower on average, up to 108 ns
-with two refreshes. Samples without a refresh were all within 6 ns of each
-other.
+**The samples must not lock onto the refresh.** Without the random wait, the
+time between two samples of a size is constant: at 1 KiB it was 11.70 µs,
+exactly three `tREFI`, so once a refresh fell in a sample it fell in all the
+next ones, and only 2 of 15 samples were clean. With the wait, the samples
+spread over the refresh period, and the median is within 1.5% of the fastest
+sample at every size but 1 KiB (7% below it).
 
-So below 8 KiB, compare runs of the same firmware only: changing a `printf`
-shifts every sample by a few ns and moves the refreshes to other samples.
+So up to 8 KiB the medians show copies without a refresh. Long copies hardly
+meet any: DRAMSys postpones up to 128 refreshes while the channel is busy, so a
+132 µs sample contains at most one, where about 67 are due. A stream longer
+than about 0.5 ms (128 × 3.9 µs) would pay them back, up to 11.5% of the time.
 
 ### DRAM bandwidth vs what the cluster sees
 
@@ -160,9 +170,9 @@ Green is how hard the DRAM works: bytes on its data bus over the time from its
 first burst to its last. (Below 32 B the DRAM still moves a whole 32 B burst per
 copy, so green counts more bytes than the copy.)
 
-**The two curves meet at the top** (63.88 GB/s on the DRAM bus, 63.86 GB/s for
+**The two curves meet at the top** (63.64 GB/s on the DRAM bus, 63.61 GB/s for
 the cluster at 1 MiB), **but for mid-size copies even the DRAM is far from its
-limit**: 44.7 GB/s at 4 KiB. With one copy at a time, the DRAM spends part of
+limit**: 38.7 GB/s at 4 KiB. With one copy at a time, the DRAM spends part of
 its window waiting. In the
 [pipelined sweep](../app_dram_bandwidth_pipelined/README.md#dram-bandwidth-vs-what-the-cluster-sees)
 it does not.
@@ -174,15 +184,39 @@ bus idle between the first and the last burst; purple, the time outside the
 DRAM window.
 
 **The big yellow area is the price of waiting for each copy.** Between two
-copies the DRAM sits idle for 30–40 ns, the round trip of the next request:
-200–285 ns per sample. At 4 KiB the DRAM is busy only 66% of the time, and up
-to 512 B at most 20%. Yellow shrinks only because large copies make the gaps
-negligible; the pipelined sweep removes it by keeping eight copies queued.
+copies the DRAM sits idle while the next request travels and opens its row:
+210–485 ns per sample up to 8 KiB. At 4 KiB the DRAM is busy only 56% of the
+time, and up to 512 B at most 18%. Yellow shrinks only because large copies
+make the gaps negligible; the pipelined sweep removes it by keeping eight
+copies queued.
+
+### HBM4 timings vs the old ones
+
+![Sequential reads with the HBM4 and the old timings](assets/figures/timings.png)
+
+The same firmware with the old emulation timings (grey,
+[bandwidth_ccds4.csv](assets/data/bandwidth_ccds4.csv), run on 2026-11-25) and
+the HBM4 timings (blue). The HBM4 rows take much longer to open and close, and
+refresh blocks the channel longer:
+
+| | Old | HBM4 |
+| --- | ---: | ---: |
+| `tRCD`, open a row | 2.5 ns | 19.5 ns |
+| `tRP`, close a row | 2.5 ns | 16.5 ns |
+| `RL`, read latency | 7.5 ns | 10 ns |
+| `tFAW`, window for four row openings | 2 ns | 15 ns |
+| `tRFC` every `tREFI` | 65 ns every 1.25 µs | 450 ns every 3.9 µs |
+
+**The peak does not move** (63.86 → 63.61 GB/s at 1 MiB): a long copy keeps
+the banks busy and hides the row openings. **Below 16 KiB copies lose 10–40%**
+(−39% at 64 B, −18% at 1 KiB, −15% at 4 KiB, −10% at 16 KiB), because each
+copy waits for its row; from 64 KiB the loss is under 3%.
 
 ## Simulator fixes
 
 Two parts of GVSoC made the curve look worse than hardware would. Both are
-fixed in the runs above.
+fixed in the runs above. **This section was measured with the old emulation
+timings**, so its curves end at 63.86 GB/s.
 
 ### Wide-port arbiter
 
@@ -234,7 +268,7 @@ outstanding burst. To get the old behaviour back, run with
 
 The same firmware with the old iDMA (grey) and the new one (blue), from
 [bandwidth_whole_burst.csv](assets/data/bandwidth_whole_burst.csv) and
-[bandwidth.csv](assets/data/bandwidth.csv).
+[bandwidth_ccds4.csv](assets/data/bandwidth_ccds4.csv).
 
 **The fix matters between 1 and 64 KiB.** Up to 512 B every sample is
 identical, to the picosecond: a burst that fits in one line had nothing to
@@ -254,30 +288,6 @@ does not change.
 (Below 16 KiB the medians also move with the refreshes, so the gain there is
 ± a few %.)
 
-### All the fixes together
-
-![Sequential reads before and after each simulator fix](assets/figures/simulator_fixes.png)
-
-The same sweep in the four configurations we went through, from the original
-(light grey) to the final one (blue).
-
-**The router fix is the big one at the top**: the synchronous router flattens
-at about 57.8 GB/s, 9.5% below the final curve at 1 MiB. **The iDMA fix is the
-big one in the middle**, up to 17% around 4 KiB. The `CCDS` fix is small but
-keeps the curve under the physical limit: with `CCDS = 2` it ends slightly
-above 64 GB/s. Below 1 KiB the curves cross at random because of the
-refreshes.
-
-| Block | Synchronous router, `CCDS = 2` | Asynchronous router, `CCDS = 2` | `CCDS = 4` | 512 B chunks (final) |
-| ---: | ---: | ---: | ---: | ---: |
-| 4 KiB | 37.71 GB/s | 37.62 GB/s | 35.97 GB/s | 42.17 GB/s |
-| 16 KiB | 51.42 GB/s | 54.50 GB/s | 52.87 GB/s | 56.09 GB/s |
-| 64 KiB | 56.08 GB/s | 61.56 GB/s | 61.04 GB/s | 61.62 GB/s |
-| 1 MiB | 57.78 GB/s | 64.08 GB/s | 63.80 GB/s | 63.86 GB/s |
-
-(The two `CCDS = 2` runs are from 2026-11-20 and earlier, with an older
-firmware.)
-
 ## Regenerate the figures
 
 ```bash
@@ -286,10 +296,10 @@ pulp/.venv/bin/python "$APP_DIR/plot.py"
 ```
 
 `plot.py` reads `assets/data/` and writes every chart into `assets/figures/`.
-`read_chunks.png` also needs `bandwidth_whole_burst.csv`, the same firmware run
-with `--config-opt system/idma_read_chunk=0`; `simulator_fixes.png` also needs
-`bandwidth_ccds2.csv` and `bandwidth_sync_router_ccds2.csv`, the 2026-11-20
-and earlier runs. For a new run, `plot.py "$RUN_DIR"` draws the charts next to
-its CSVs (`--output-dir` changes this) and skips those whose CSVs are missing;
-the fit needs the 64/128/256 KiB points. All DRAM sweep charts share
-[dram_common/plot_sweep.py](../dram_common/plot_sweep.py).
+`timings.png` and `read_chunks.png` also need `bandwidth_ccds4.csv`, the
+2026-11-25 run with the old timings, and `read_chunks.png` needs
+`bandwidth_whole_burst.csv`, the same firmware run with
+`--config-opt system/idma_read_chunk=0`. For a new run, `plot.py "$RUN_DIR"`
+draws the charts next to its CSVs (`--output-dir` changes this) and skips those
+whose CSVs are missing; the fit needs the 64/128/256 KiB points. All DRAM sweep
+charts share [dram_common/plot_sweep.py](../dram_common/plot_sweep.py).

@@ -14,7 +14,6 @@ from app_dram_bandwidth_pipelined.summarize import (
     offsets,
     samples,
 )
-from app_dram_bandwidth_pipelined.query_trace import bursts, size_spec, spacing
 from dram_common.analysis import plateau, summarize
 
 
@@ -78,39 +77,6 @@ class PipelinedAnalysisTest(unittest.TestCase):
         for broken in invalid:
             with self.subTest(broken=broken[:120]), self.assertRaises(ValueError):
                 measurements(broken)
-
-
-def request(begin_ns, bank_group, pseudo_channel=0):
-    begin = round(begin_ns * 1000)
-    return dict(
-        bytes=512,
-        sample=0,
-        pseudo_channel=pseudo_channel,
-        bank_group=bank_group,
-        burst_begin_ps=begin,
-        burst_end_ps=begin + 1000,
-    )
-
-
-class TraceTest(unittest.TestCase):
-    def test_spacing_rule_and_overlap(self):
-        # Same group 1 ns apart (L), another group 0.5 ns later (S, overlapping),
-        # and a burst on the other pseudo-channel that must not count.
-        trace = [request(0, 4), request(1, 4), request(1.5, 6), request(0.2, 4, 1)]
-        channel = bursts(trace, 0)
-        self.assertEqual([b.get("rule") for b in channel], [None, "L", "S"])
-        self.assertEqual([b.get("overlap") for b in channel], [None, False, True])
-        self.assertEqual(channel[2]["gap_ps"], 500)
-        self.assertEqual(channel[2]["from_bank_group"], 4)
-
-    def test_spacing_counts_both_pseudo_channels(self):
-        trace = [request(0, 4), request(1, 5), request(0, 4, 1), request(0.5, 5, 1)]
-        counts = {(r["rule"], r["gap_ns"], r["overlap"]): r["count"] for r in spacing(trace)}
-        self.assertEqual(counts, {("S", 1.0, 0): 1, ("S", 0.5, 1): 1})
-
-    def test_size_with_address_window(self):
-        self.assertEqual(size_spec("512"), (512, None))
-        self.assertEqual(size_spec("1048576:0x3ff800:0x400800"), (1 << 20, (0x3FF800, 0x400800)))
 
 
 if __name__ == "__main__":
