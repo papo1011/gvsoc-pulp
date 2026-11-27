@@ -26,12 +26,17 @@ FIELDS = (
 )
 
 
-def offsets():
+def samples(size, small_bytes=0, small_samples=SAMPLES):
+    """Samples per size: blocks up to small_bytes get small_samples (older logs: 3 for all)."""
+    return small_samples if size <= small_bytes else SAMPLES
+
+
+def offsets(small_bytes=0, small_samples=SAMPLES):
     """Mirror the firmware allocation: windows up to 512 KiB from 32 MiB, 1 MiB from 8 MiB."""
     result = {}
     cursor = 0x02000000
     for size in SIZES:
-        for sample in range(SAMPLES):
+        for sample in range(samples(size, small_bytes, small_samples)):
             if size == 1 << 20 and cursor >= 0x02000000:
                 cursor = 0x00800000
             alignment = max(size, 32)
@@ -45,10 +50,15 @@ def offsets():
 def measurements(log):
     """Reject partial sweeps rather than drawing conclusions from missing sizes."""
     require_success(log, name="SoftHier DRAM bandwidth", prefix="[dram-bandwidth]")
-    limits = re.findall(r"^\[dram-bandwidth\] max_bytes=(\d+)$", log, re.M)
-    if limits != [str(SIZES[-1])]:
+    limits = re.findall(
+        r"^\[dram-bandwidth\] max_bytes=(\d+)(?: small_bytes=(\d+) small_samples=(\d+))?$",
+        log,
+        re.M,
+    )
+    if len(limits) != 1 or limits[0][0] != str(SIZES[-1]):
         raise ValueError("Missing, invalid or duplicate sweep size limit")
-    expected = offsets()
+    small_bytes, small_samples = (int(limits[0][1] or 0), int(limits[0][2] or SAMPLES))
+    expected = offsets(small_bytes, small_samples)
     intervals = []
     seen = set()
     rows = []

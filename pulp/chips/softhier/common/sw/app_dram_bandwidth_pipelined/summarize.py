@@ -18,17 +18,22 @@ SIZES = tuple(1 << power for power in range(2, 21))  # 4 B .. 1 MiB
 SAMPLES = 3
 REPEATS = 8
 REGION = 4 << 20
-REGION_BYTES = 48 << 20
+REGION_BYTES = 52 << 20  # 48 MiB before the extra small-block samples
 FIELDS = ("operation", "cluster", "channel", "bytes", "repetitions", "sample", "hbm_offset")
 
 
-def offsets():
+def samples(size, small_bytes=0, small_samples=SAMPLES):
+    """Samples per size: blocks up to small_bytes get small_samples (older logs: 3 for all)."""
+    return small_samples if size <= small_bytes else SAMPLES
+
+
+def offsets(small_bytes=0, small_samples=SAMPLES):
     """Mirror the firmware allocation: aligned, consecutive windows per sample."""
     result = {}
     cursor = REGION
     for size in SIZES:
         alignment = max(size, 32)
-        for sample in range(SAMPLES):
+        for sample in range(samples(size, small_bytes, small_samples)):
             cursor = (cursor + alignment - 1) & ~(alignment - 1)
             result[size, sample] = cursor
             cursor += REPEATS * size
@@ -41,13 +46,19 @@ def measurements(log):
     require_success(log, name=NAME, prefix=PREFIX)
     header = re.findall(
         r"^\[dram-pipelined\] first_bytes=(\d+) last_bytes=(\d+) samples=(\d+) "
-        r"in_flight=(\d+)$",
+        r"in_flight=(\d+)(?: small_bytes=(\d+) small_samples=(\d+))?$",
         log,
         re.M,
     )
-    if header != [(str(SIZES[0]), str(SIZES[-1]), str(SAMPLES), str(REPEATS))]:
+    if len(header) != 1 or header[0][:4] != (
+        str(SIZES[0]),
+        str(SIZES[-1]),
+        str(SAMPLES),
+        str(REPEATS),
+    ):
         raise ValueError("Unexpected or duplicate sweep configuration")
-    expected = offsets()
+    small_bytes, small_samples = (int(header[0][4] or 0), int(header[0][5] or SAMPLES))
+    expected = offsets(small_bytes, small_samples)
     seen = set()
     rows = []
     for line in log.splitlines():

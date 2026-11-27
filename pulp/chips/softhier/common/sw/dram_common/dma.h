@@ -48,6 +48,22 @@ static uint32_t check(uint32_t address, uint32_t bytes, uint32_t first, uint32_t
     return errors;
 }
 
+// Untimed wait of 0 to 3.9 us before a sample, pseudo-random but fixed by `key`.
+// DRAMSys refreshes each pseudo-channel every 3.9 us (tREFI). Samples of constant
+// length and spacing would otherwise lock onto the refresh phase, so that either
+// all samples of a size meet a refresh or none does.
+static void random_idle(uint32_t key)
+{
+    uint32_t hash = key ^ 0x9e3779b9u; // murmur3 finalizer
+    hash = (hash ^ (hash >> 16)) * 0x85ebca6bu;
+    hash = (hash ^ (hash >> 13)) * 0xc2b2ae35u;
+    hash ^= hash >> 16;
+    const uint64_t deadline = flex_time_ps() + (uint64_t)(hash % 3900) * 1000;
+    while (flex_time_ps() < deadline)
+    {
+    }
+}
+
 static void fill_source(uint32_t cluster)
 {
     volatile uint32_t *src = (volatile uint32_t *)SRC;

@@ -12,18 +12,23 @@ from app_dram_bandwidth_pipelined.summarize import (
     SIZES,
     measurements,
     offsets,
+    samples,
 )
 from app_dram_bandwidth_pipelined.query_trace import bursts, size_spec, spacing
 from dram_common.analysis import plateau, summarize
 
 
-def complete_log(rate=lambda size: 10):
-    """Synthetic sweep; `rate` gives bytes/ns for each size."""
-    lines = ["[dram-pipelined] first_bytes=4 last_bytes=1048576 samples=3 in_flight=8"]
-    windows = offsets()
+def complete_log(rate=lambda size: 10, small=(0, 3)):
+    """Synthetic sweep; `rate` gives bytes/ns for each size, `small` is
+    (small_bytes, small_samples), (0, 3) for a log from before the extra samples."""
+    header = "[dram-pipelined] first_bytes=4 last_bytes=1048576 samples=3 in_flight=8"
+    if small[0]:
+        header += f" small_bytes={small[0]} small_samples={small[1]}"
+    lines = [header]
+    windows = offsets(*small)
     start = 1_000_000
     for size in SIZES:
-        for sample in range(SAMPLES):
+        for sample in range(samples(size, *small)):
             duration = round(REPEATS * size * 1000 / rate(size))
             lines.append(
                 f"[dram-pipelined] cluster=0 channel=0 operation=dma_read bytes={size} "
@@ -45,6 +50,12 @@ class PipelinedAnalysisTest(unittest.TestCase):
             self.assertEqual(point["samples"], SAMPLES)
         for row in rows:
             self.assertEqual(row["hbm_span"], 8 * row["bytes"])
+
+    def test_small_blocks_get_more_samples(self):
+        rows = measurements(complete_log(small=(8192, 15)))
+        self.assertEqual(len(rows), 12 * 15 + 7 * 3)
+        curve = summarize(rows, 64)
+        self.assertEqual([point["samples"] for point in curve], [15] * 12 + [3] * 7)
 
     def test_detects_the_plateau(self):
         rows = measurements(complete_log(lambda size: 64 * size / (size + 4096)))

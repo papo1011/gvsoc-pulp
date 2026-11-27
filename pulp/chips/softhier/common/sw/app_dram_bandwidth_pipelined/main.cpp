@@ -15,12 +15,21 @@
 static constexpr uint32_t FIRST_BYTES = 4;
 static constexpr uint32_t LAST_BYTES = 1024 * 1024;
 static constexpr uint32_t SAMPLES = 3;
+// A refresh blocks the channel for 450 ns and makes a sample of small copies
+// several times slower, so small blocks get more samples to keep the median
+// clear of refreshes.
+static constexpr uint32_t SMALL_BYTES = 8 * 1024;
+static constexpr uint32_t SMALL_SAMPLES = 15;
+static constexpr uint32_t samples(uint32_t bytes)
+{
+    return bytes <= SMALL_BYTES ? SMALL_SAMPLES : SAMPLES;
+}
 // TCDM destination of every timed copy, clear of the staging buffers in dma.h.
 static constexpr uint32_t BUFFER = local(0x40000);
 // HBM channel 0 offsets: every sample reads its own consecutive window, so no
 // block is read twice.
 static constexpr uint32_t REGION = 4 * 1024 * 1024;
-static constexpr uint32_t REGION_BYTES = 48 * 1024 * 1024;
+static constexpr uint32_t REGION_BYTES = 52 * 1024 * 1024;
 static constexpr uint32_t PATTERN_MASK = MAX_BYTES / sizeof(uint32_t) - 1;
 
 static_assert(DST + MAX_BYTES <= BUFFER, "Staging and timed buffers must not overlap");
@@ -72,7 +81,7 @@ static void initialize_hbm()
         copy(ARCH_HBM_START_BASE + REGION + offset, SRC, MAX_BYTES);
     uint32_t cursor = REGION;
     for (uint32_t bytes = FIRST_BYTES; bytes <= LAST_BYTES; bytes *= 2)
-        for (uint32_t sample = 0; sample < SAMPLES; ++sample)
+        for (uint32_t sample = 0; sample < samples(bytes); ++sample)
         {
             cursor = align(cursor, bytes);
             for (uint32_t repetition = 0; repetition < REPEATS; ++repetition)
@@ -91,6 +100,7 @@ static uint32_t measure(uint32_t bytes, uint32_t sample, uint32_t offset)
     for (uint32_t i = 0; i < bytes / sizeof(uint32_t); ++i)
         buffer[i] = ~pattern(i);
     const uint32_t address = ARCH_HBM_START_BASE + offset;
+    random_idle(sample << 24 | bytes);
     fence();
     const uint64_t start = flex_time_ps();
     for (uint32_t repetition = 0; repetition < REPEATS; ++repetition)
@@ -115,8 +125,9 @@ int main()
     if (flex_get_cluster_id() != 0 || !flex_is_dm_core())
         return 0;
 
-    printf("[dram-pipelined] first_bytes=%u last_bytes=%u samples=%u in_flight=%u\n", FIRST_BYTES,
-           LAST_BYTES, SAMPLES, REPEATS);
+    printf("[dram-pipelined] first_bytes=%u last_bytes=%u samples=%u in_flight=%u small_bytes=%u "
+           "small_samples=%u\n",
+           FIRST_BYTES, LAST_BYTES, SAMPLES, REPEATS, SMALL_BYTES, SMALL_SAMPLES);
     initialize_hbm();
     // Let posted setup writes drain before the first timed copy.
     const uint64_t deadline = flex_time_ps() + 100000000; // 100 us, untimed.
@@ -127,7 +138,7 @@ int main()
     uint32_t errors = 0;
     uint32_t cursor = REGION;
     for (uint32_t bytes = FIRST_BYTES; bytes <= LAST_BYTES; bytes *= 2)
-        for (uint32_t sample = 0; sample < SAMPLES; ++sample)
+        for (uint32_t sample = 0; sample < samples(bytes); ++sample)
         {
             cursor = align(cursor, bytes);
             if (cursor + REPEATS * bytes > REGION + REGION_BYTES)

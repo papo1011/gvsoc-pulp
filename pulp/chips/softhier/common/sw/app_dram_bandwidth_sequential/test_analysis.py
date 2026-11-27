@@ -8,17 +8,21 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app_dram_bandwidth_sequential.summarize import SAMPLES, SIZES, measurements, offsets
+from app_dram_bandwidth_sequential.summarize import SIZES, measurements, offsets, samples
 from dram_common.analysis import plateau, query_measurements, summarize
 
 
-def log_for_sweep(rate=lambda size: 8):
-    """Synthetic complete sweep; `rate` gives bytes/ns for each size."""
-    lines = ["[dram-bandwidth] max_bytes=1048576"]
-    windows = offsets()
+def log_for_sweep(rate=lambda size: 8, small=(0, 3)):
+    """Synthetic complete sweep; `rate` gives bytes/ns for each size, `small` is
+    (small_bytes, small_samples), (0, 3) for a log from before the extra samples."""
+    header = "[dram-bandwidth] max_bytes=1048576"
+    if small[0]:
+        header += f" small_bytes={small[0]} small_samples={small[1]}"
+    lines = [header]
+    windows = offsets(*small)
     start = 1 << 32
     for size in SIZES:
-        for sample in range(SAMPLES):
+        for sample in range(samples(size, *small)):
             end = start + round(8 * size * 1000 / rate(size))
             lines.append(
                 f"[dram-bandwidth] cluster=0 channel=0 operation=dma_read bytes={size} "
@@ -49,6 +53,18 @@ class SequentialAnalysisTest(unittest.TestCase):
             self.assertEqual(row["hbm_span"], 8 * row["bytes"])
         for first, second in zip(ordered, ordered[1:]):
             self.assertLessEqual(first["hbm_offset"] + first["hbm_span"], second["hbm_offset"])
+
+    def test_small_blocks_get_more_samples(self):
+        rows = measurements(log_for_sweep(small=(8192, 15)))
+        self.assertEqual(len(rows), 12 * 15 + 7 * 3)
+        curve = summarize(rows, 64)
+        self.assertEqual([row["samples"] for row in curve], [15] * 12 + [3] * 7)
+        # The offsets follow the header, not the default of 3 samples everywhere.
+        self.assertRaises(
+            ValueError,
+            measurements,
+            log_for_sweep(small=(8192, 15)).replace(" small_bytes=8192 small_samples=15", ""),
+        )
 
     def test_accepts_logs_from_before_the_rename(self):
         log = log_for_sweep().replace("pattern=sequential", "pattern=streaming")

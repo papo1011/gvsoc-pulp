@@ -18,6 +18,15 @@
 static constexpr uint32_t FIRST_BYTES = 4;
 static constexpr uint32_t LAST_BYTES = BANDWIDTH_SEQUENTIAL ? 1024 * 1024 : 512 * 1024;
 static constexpr uint32_t SAMPLES = 3;
+// A refresh blocks the channel for 450 ns and makes a sample of small copies
+// several times slower, so small blocks get more samples to keep the median
+// clear of refreshes.
+static constexpr uint32_t SMALL_BYTES = 8 * 1024;
+static constexpr uint32_t SMALL_SAMPLES = 15;
+static constexpr uint32_t samples(uint32_t bytes)
+{
+    return bytes <= SMALL_BYTES ? SMALL_SAMPLES : SAMPLES;
+}
 static constexpr uint32_t READ_BUFFER = local(0x20000);
 static constexpr uint32_t SEQUENTIAL_START = 32 * 1024 * 1024;
 static constexpr uint32_t FULL_TCDM_SOURCE = 8 * 1024 * 1024;
@@ -77,7 +86,7 @@ static void initialize_hbm()
     {
         uint32_t cursor = BANDWIDTH_SEQUENTIAL ? SEQUENTIAL_START : HBM_OFFSET;
         for (uint32_t bytes = FIRST_BYTES; bytes <= LAST_BYTES; bytes *= 2)
-            for (uint32_t sample = 0; sample < SAMPLES; ++sample)
+            for (uint32_t sample = 0; sample < samples(bytes); ++sample)
             {
                 cursor = align_window(cursor, bytes);
                 for (uint32_t repetition = 0; repetition < REPEATS; ++repetition)
@@ -106,6 +115,7 @@ static uint32_t measure(uint32_t bytes, uint32_t sample, uint32_t offset)
         errors += check(target, bytes, pattern(0));
     }
 
+    random_idle(sample << 24 | bytes);
     // One logical DMA copy at a time. The DMA may still have
     // several internal requests in flight. Timing includes issue and wait costs.
     const uint64_t start = flex_time_ps();
@@ -143,7 +153,8 @@ static int run_bandwidth_sweep()
         flex_eoc(1);
         return 1;
     }
-    printf("[dram-bandwidth] max_bytes=%u\n", LAST_BYTES);
+    printf("[dram-bandwidth] max_bytes=%u small_bytes=%u small_samples=%u\n", LAST_BYTES,
+           SMALL_BYTES, SMALL_SAMPLES);
     initialize_hbm();
     if (BANDWIDTH_SEQUENTIAL)
     {
@@ -157,7 +168,7 @@ static int run_bandwidth_sweep()
     uint32_t errors = 0;
     uint32_t cursor = BANDWIDTH_SEQUENTIAL ? SEQUENTIAL_START : HBM_OFFSET;
     for (uint32_t bytes = FIRST_BYTES; bytes <= LAST_BYTES; bytes *= 2)
-        for (uint32_t sample = 0; sample < SAMPLES; ++sample)
+        for (uint32_t sample = 0; sample < samples(bytes); ++sample)
         {
             cursor = align_window(cursor, bytes);
             const uint32_t span = BANDWIDTH_SEQUENTIAL ? REPEATS * bytes : bytes;
